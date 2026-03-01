@@ -1,0 +1,4 @@
+# Prefect orchestration — daily pipeline, experiments, QA
+prefect>=2.14.0
+supabase>=2.0.0
+slack-sdk>=3.23.0

@@ -1,0 +1,102 @@
+# Metrics and tables (template)
+
+Replace `{{ client_slug }}` with the client identifier. This doc describes the warehouse tables and metrics used for reporting and experiments.
+
+---
+
+## Schema overview
+
+| Layer   | Tables |
+|---------|--------|
+| Core    | `client_config` |
+| Dims    | `dim_geo`, `dim_campaign` |
+| Facts   | `fact_spend_daily`, `fact_kpi_daily`, `fact_kpi_geo_daily`, `fact_klaviyo_daily`, `fact_tiktok_organic_daily` |
+| Events  | `marketing_events` |
+| Experiments | `experiments`, `experiment_results` |
+| Quality | `data_quality_flags`, `pipeline_runs`, `ai_query_audit` |
+
+---
+
+## Fact tables and metrics
+
+### fact_spend_daily
+
+- **Source:** dbt mart from raw Meta, Google, TikTok Ads (Airbyte).
+- **Grain:** One row per (report_date, channel).
+- **Metrics:** `spend`, `impressions`, `clicks`.
+- **Use:** Spend vs revenue, ROAS by channel, daily spend trends.
+
+### fact_kpi_daily
+
+- **Source:** dbt mart from Shopify orders (Airbyte).
+- **Grain:** One row per report_date.
+- **Metrics:** `revenue`, `orders`.
+- **Use:** Revenue trends, ROAS, daily performance.
+
+### fact_kpi_geo_daily
+
+- **Source:** dbt mart from Shopify (geo breakdown) or allocation.
+- **Grain:** One row per (report_date, geo_id).
+- **Metrics:** `revenue`, `orders`.
+- **Use:** GeoLift, spend/revenue by state/region.
+
+### fact_klaviyo_daily
+
+- **Source:** dbt mart from Klaviyo campaigns (Airbyte).
+- **Grain:** One row per (report_date, campaign_id).
+- **Metrics:** `sent`, `opens`, `clicks`.
+- **Use:** Email campaign context, blast impact.
+
+### fact_tiktok_organic_daily
+
+- **Source:** Metricool sync or dbt mart from Metricool raw.
+- **Grain:** One row per report_date.
+- **Metrics:** `views`, `likes`, `comments`, `shares`, `followers`.
+- **Use:** Organic TikTok trends, CausalImpact (organic lift).
+
+---
+
+## Dimension tables
+
+### dim_geo
+
+- **Source:** Seed (e.g. `dim_geo_states.csv`) or manual load.
+- **Use:** Geo reporting, GeoLift holdout/treatment assignment.
+
+### dim_campaign
+
+- **Source:** dbt from raw campaign metadata.
+- **Use:** Campaign-level reporting and events.
+
+---
+
+## Events and experiments
+
+### marketing_events
+
+- **Source:** Manual or automated (e.g. Klaviyo send events).
+- **Use:** Context for dashboards (email blasts, promos).
+
+### experiments / experiment_results
+
+- **Source:** Model runner (GeoLift, CausalImpact) writes to `experiment_results`.
+- **Use:** Lift dashboards, incrementality reporting.
+
+---
+
+## Quality and audit
+
+### data_quality_flags
+
+- **Source:** Prefect QA flow / dbt tests.
+- **Use:** Alerts when checks fail (missing dates, anomalies).
+
+### pipeline_runs
+
+- **Source:** Prefect (or equivalent) after each flow run.
+- **Use:** Run history and failure alerts.
+
+### ai_query_audit
+
+- **Source:** Slack bot (each Q&A query).
+- **Use:** Query receipts and audit log.

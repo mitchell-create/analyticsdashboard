@@ -1,0 +1,32 @@
+# sources.yml — Raw Airbyte / Metricool tables (adjust table names to match your syncs)
+# Map Airbyte stream names to source tables. Schema = raw_schema (default: raw).
+
+version: 2
+
+sources:
+  - name: raw_airbyte
+    description: Raw data from Airbyte (Meta, Google, TikTok Ads, Shopify, Klaviyo)
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      # Meta: Airbyte stream ads_insights
+      - name: ads_insights
+        description: Meta Ads daily insights (Airbyte ads_insights)
+      - name: ads_insights_region
+        description: Meta Ads insights by region (US state) for GeoLift
+      # Google: stream account_performance_report
+      - name: account_performance_report
+        description: Google Ads account performance (Airbyte)
+      - name: tiktok_advertisers_reports_daily
+        description: TikTok Ads daily reports (Airbyte, stream prefix tiktok_)
+      - name: orders
+        description: Shopify orders (Airbyte) — schema raw, table orders
+      # Klaviyo: Airbyte stream campaigns
+      - name: klaviyo_campaigns
+        description: Klaviyo campaigns (Airbyte)
+
+  - name: raw_metricool
+    description: Raw TikTok organic metrics from Metricool
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: metricool_tiktok_daily
+        description: Metricool TikTok account daily metrics

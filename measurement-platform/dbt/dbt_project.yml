@@ -1,0 +1,51 @@
+# dbt_project.yml — Multi-client measurement platform (Pattern B: 1 DB per client)
+# Set target in profiles.yml per client (Supabase).
+
+name: measurement_platform
+version: '1.0.0'
+config-version: 2
+
+profile: measurement_platform
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # Override per client if needed
+  raw_schema: raw
+
+models:
+  measurement_platform:
+    staging:
+      +schema: staging
+      +materialized: view
+      # Disable until Metricool (TikTok organic) is synced to raw.metricool_tiktok_daily
+      stg_metricool_tiktok:
+        +enabled: false
+      # Klaviyo: re-enabled now that Airbyte sync is complete
+    marts:
+      +schema: marts
+      +materialized: table
+      # Depends on stg_metricool_tiktok; enable when Metricool is set up
+      fact_tiktok_organic_daily:
+        +enabled: false
+      # Klaviyo: re-enabled now that Airbyte sync is complete
+
+seeds:
+  measurement_platform:
+    dim_geo_states:
+      +schema: marts
+      +column_types:
+        geo_id: text
+        geo_name: text
+        geo_type: text
+        country_code: text

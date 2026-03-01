@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  dbt:
+    name: dbt
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: measurement-platform/dbt
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt
+        run: |
+          pip install dbt-postgres
+
+      - name: Install deps
+        run: dbt deps
+
+      - name: Parse project
+        run: dbt parse
+
+  slack-bot:
+    name: Slack bot
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: measurement-platform/services/slack-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: measurement-platform/services/slack-bot/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build

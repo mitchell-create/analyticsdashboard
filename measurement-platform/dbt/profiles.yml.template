@@ -1,0 +1,28 @@
+# profiles.yml.template — Copy to profiles.yml and add your password (do not commit profiles.yml)
+# In profiles.yml: set password for both dev and prod, or set env var SUPABASE_DB_PASSWORD
+
+measurement_platform:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('SUPABASE_DB_HOST', 'aws-1-us-east-2.pooler.supabase.com') }}"
+      port: 5432
+      user: "{{ env_var('SUPABASE_DB_USER', 'postgres.xopsomagbnsnadxxhzhx') }}"
+      password: "{{ env_var('SUPABASE_DB_PASSWORD', '') }}"
+      dbname: postgres
+      schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10
+    prod:
+      type: postgres
+      host: "{{ env_var('SUPABASE_DB_HOST', 'aws-1-us-east-2.pooler.supabase.com') }}"
+      port: 5432
+      user: "{{ env_var('SUPABASE_DB_USER', 'postgres.xopsomagbnsnadxxhzhx') }}"
+      password: "{{ env_var('SUPABASE_DB_PASSWORD', '') }}"
+      dbname: postgres
+      schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10

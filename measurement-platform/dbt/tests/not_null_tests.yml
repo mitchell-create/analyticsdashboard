@@ -1,0 +1,36 @@
+# not_null_tests.yml — dbt not_null tests on key columns
+version: 2
+
+models:
+  - name: fact_spend_daily
+    columns:
+      - name: report_date
+        tests: [not_null]
+      - name: channel
+        tests: [not_null]
+      - name: spend
+        tests: [not_null]
+
+  - name: fact_kpi_daily
+    columns:
+      - name: report_date
+        tests: [not_null, unique]
+      - name: revenue
+        tests: [not_null]
+      - name: orders
+        tests: [not_null]
+
+  # Disabled: fact_tiktok_organic_daily model is disabled until Metricool is synced
+  # - name: fact_tiktok_organic_daily
+  #   columns:
+  #     - name: report_date
+  #       tests: [not_null, unique]
+  #     - name: views
+  #       tests: [not_null]
+
+  - name: dim_geo
+    columns:
+      - name: geo_id
+        tests: [not_null, unique]
+      - name: geo_name
+        tests: [not_null]

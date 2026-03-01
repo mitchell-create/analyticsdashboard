@@ -1,0 +1,5 @@
+# unique_key_tests.yml — Additional unique tests (fact_spend_daily grain is report_date+channel; no single-column unique)
+# fact_kpi_daily, fact_tiktok_organic_daily, dim_geo unique tests are in not_null_tests.yml to avoid duplicate resource definitions.
+version: 2
+
+models: []

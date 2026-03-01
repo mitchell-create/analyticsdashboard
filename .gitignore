@@ -1,0 +1,47 @@
+# Env & secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# dbt
+measurement-platform/dbt/profiles.yml
+measurement-platform/dbt/target/
+measurement-platform/dbt/logs/
+measurement-platform/dbt/dbt_packages/
+
+# Node
+node_modules/
+measurement-platform/services/slack-bot/node_modules/
+measurement-platform/services/slack-bot/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+
+# Prefect
+.prefect/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Metabase (runtime)
+metabase.jar
+metabase.db*
+plugins/*.jar
+plugins/*.mv.db

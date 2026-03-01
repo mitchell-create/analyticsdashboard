@@ -1,0 +1,25 @@
+# Prefect 3 — deployment definitions (run: prefect deploy)
+# See https://docs.prefect.io/latest/how-to-guides/deployments/prefect-yaml
+
+name: measurement-platform
+prefect-version: ">=3.0.0"
+
+deployments:
+  - name: daily
+    entrypoint: orchestration/prefect/flows/daily_pipeline.py:daily_pipeline
+    description: Daily dbt run + dbt test after Airbyte
+    schedule:
+      cron: "0 6 * * *"
+      timezone: "America/New_York"
+    work_pool:
+      name: default-agent-pool
+    parameters: {}
+    # Pass env vars to flow runs (dbt needs Path to find dbt CLI)
+    job_variables:
+      env:
+        SUPABASE_URL: "{{ $SUPABASE_URL }}"
+        SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
+        DBT_PROJECT_DIR: "{{ $DBT_PROJECT_DIR }}"
+        Path: "{{ $Path }}"
+        SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
+        SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
