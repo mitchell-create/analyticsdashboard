@@ -54,13 +54,13 @@ For each filter:
 
 ---
 
-## Step 4: Set default values (optional)
+## Step 4: Set default values (recommended)
 
-If you leave filters empty, the cards use:
-- **Primary period:** Last 30 days (CURRENT_DATE - 30 to CURRENT_DATE)
-- **Comparison period:** Prior 30 days (CURRENT_DATE - 60 to CURRENT_DATE - 31)
+If you leave filters empty, no date predicates are applied and cards will use all available history.
 
-To avoid "missing required parameters," set default dates on each filter or pick dates when viewing.
+To keep comparisons meaningful (and queries fast), set defaults on each filter or pick dates before viewing:
+- **Primary period:** choose your normal reporting window (for example, last 30 days).
+- **Comparison period:** choose the prior window of the same length.
 
 ---
 

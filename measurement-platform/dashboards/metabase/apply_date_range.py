@@ -24,11 +24,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from create_mvp_dashboards import get_headers, login, METABASE_URL
 from fix_metabase_date_filter import get_card, list_cards, update_card_option_b
 
-# Date range: report_date_start and report_date_end (dashboard Date filters)
-# Optional variables with SQL defaults: when filters are empty, uses last 30 days (Metabase optional variable syntax)
-_DATE_RANGE_CLAUSE = "WHERE report_date >= [[{{report_date_start}}::date --]] CURRENT_DATE - 30 AND report_date <= [[{{report_date_end}}::date --]] CURRENT_DATE"
-_AND_DATE_RANGE = "AND report_date >= [[{{report_date_start}}::date --]] CURRENT_DATE - 30 AND report_date <= [[{{report_date_end}}::date --]] CURRENT_DATE"
-_AND_S_DATE_RANGE = "AND s.report_date >= [[{{report_date_start}}::date --]] CURRENT_DATE - 30 AND s.report_date <= [[{{report_date_end}}::date --]] CURRENT_DATE"
+# Date range: report_date_start and report_date_end (dashboard Date filters).
+# Use optional AND blocks instead of the inline "-- default" trick; inline comments
+# can swallow the rest of the WHERE clause when a variable is provided.
+_DATE_RANGE_CLAUSE = """WHERE 1=1
+[[AND report_date >= {{report_date_start}}::date]]
+[[AND report_date <= {{report_date_end}}::date]]"""
+_AND_DATE_RANGE = """
+[[AND report_date >= {{report_date_start}}::date]]
+[[AND report_date <= {{report_date_end}}::date]]"""
+_AND_S_DATE_RANGE = """
+[[AND s.report_date >= {{report_date_start}}::date]]
+[[AND s.report_date <= {{report_date_end}}::date]]"""
 
 DATE_RANGE_QUESTIONS = [
     {
@@ -206,7 +213,7 @@ def main() -> int:
 
     print(
         "\nDone. Updated {} card(s).\n".format(updated)
-        + "Next: Add a dashboard Date range filter and link it to both 'Start date' and 'End date'.\n"
+        + "Next: Add two dashboard Date filters (Single date): 'Start date' and 'End date', then link each to its matching variable.\n"
         + "See METABASE_DATE_RANGE_SETUP.md for step-by-step instructions."
     )
     return 0
