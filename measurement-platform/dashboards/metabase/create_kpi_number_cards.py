@@ -2,9 +2,9 @@
 """
 Create KPI number cards with automatic previous-period comparison.
 
-Each card uses Metabase's smartscalar (Trend) display:
-  - Shows a large number for the selected date range
-  - Shows ↑/↓ arrow with % change vs the previous period
+Each card shows:
+  - A large number for the selected date range
+  - ↑/↓ arrow with % change labeled "vs Previous Period"
 
 The previous period is auto-computed as the same number of days
 immediately before start_date.  Example:
@@ -65,176 +65,141 @@ def _period_days_expr() -> str:
     return f"({_P2} - {_P1} + 1)"
 
 
-def _prev_start() -> str:
-    """Expression for the first day of the previous period."""
-    return f"({_P1} - {_period_days_expr()})"
+# ---------------------------------------------------------------------------
+# SQL builder helpers — each KPI query returns ONE row:
+#   metric_value  (the main big number)
+#   change_pct    (% change vs previous period, shown as comparison)
+# ---------------------------------------------------------------------------
+
+def _single_table_kpi_sql(metric_col: str, agg_expr: str, table: str) -> str:
+    """Build KPI SQL for metrics from a single table (SUM of one column)."""
+    return f"""
+WITH params AS (
+  SELECT {_P1} AS range_start, {_P2} AS range_end,
+         {_period_days_expr()} AS period_days
+),
+curr AS (
+  SELECT COALESCE({agg_expr}, 0) AS val
+  FROM {table}
+  WHERE report_date >= (SELECT range_start FROM params)
+    AND report_date <= (SELECT range_end FROM params)
+),
+prev AS (
+  SELECT COALESCE({agg_expr}, 0) AS val
+  FROM {table}
+  WHERE report_date >= (SELECT range_start - period_days FROM params)
+    AND report_date <  (SELECT range_start FROM params)
+)
+SELECT
+  ROUND(c.val::numeric, 2) AS {metric_col},
+  CASE WHEN p.val = 0 THEN 0
+       ELSE ROUND(((c.val - p.val) / p.val * 100)::numeric, 1)
+  END AS change_pct
+FROM curr c, prev p
+"""
+
+
+def _ratio_kpi_sql(
+    metric_col: str,
+    num_expr: str, num_table: str,
+    den_expr: str, den_table: str,
+) -> str:
+    """Build KPI SQL for ratio metrics (numerator / denominator from different tables)."""
+    return f"""
+WITH params AS (
+  SELECT {_P1} AS range_start, {_P2} AS range_end,
+         {_period_days_expr()} AS period_days
+),
+curr_num AS (
+  SELECT COALESCE({num_expr}, 0) AS val FROM {num_table}
+  WHERE report_date >= (SELECT range_start FROM params)
+    AND report_date <= (SELECT range_end FROM params)
+),
+curr_den AS (
+  SELECT COALESCE({den_expr}, 0) AS val FROM {den_table}
+  WHERE report_date >= (SELECT range_start FROM params)
+    AND report_date <= (SELECT range_end FROM params)
+),
+prev_num AS (
+  SELECT COALESCE({num_expr}, 0) AS val FROM {num_table}
+  WHERE report_date >= (SELECT range_start - period_days FROM params)
+    AND report_date <  (SELECT range_start FROM params)
+),
+prev_den AS (
+  SELECT COALESCE({den_expr}, 0) AS val FROM {den_table}
+  WHERE report_date >= (SELECT range_start - period_days FROM params)
+    AND report_date <  (SELECT range_start FROM params)
+),
+curr AS (
+  SELECT CASE WHEN cd.val = 0 THEN 0
+              ELSE ROUND((cn.val / cd.val)::numeric, 2) END AS val
+  FROM curr_num cn, curr_den cd
+),
+prev AS (
+  SELECT CASE WHEN pd.val = 0 THEN 0
+              ELSE ROUND((pn.val / pd.val)::numeric, 2) END AS val
+  FROM prev_num pn, prev_den pd
+)
+SELECT
+  c.val AS {metric_col},
+  CASE WHEN p.val = 0 THEN 0
+       ELSE ROUND(((c.val - p.val) / p.val * 100)::numeric, 1)
+  END AS change_pct
+FROM curr c, prev p
+"""
 
 
 # ---------------------------------------------------------------------------
-# KPI Number Cards (smartscalar — 2 rows: prev aggregate, then current)
+# KPI Number Cards — scalar display with scalar.comparisons
 # ---------------------------------------------------------------------------
 KPI_NUMBER_CARDS: list[dict] = [
     {
         "name": "KPI: Total Spend",
         "metric_col": "total_spend",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       COALESCE(SUM(spend), 0) AS total_spend
-FROM public_marts.fact_spend_daily
-WHERE report_date >= (SELECT range_start - period_days FROM params)
-  AND report_date <  (SELECT range_start FROM params)
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       COALESCE(SUM(spend), 0) AS total_spend
-FROM public_marts.fact_spend_daily
-WHERE report_date >= (SELECT range_start FROM params)
-  AND report_date <= (SELECT range_end FROM params)
-ORDER BY date
-""",
+        "sql": _single_table_kpi_sql(
+            "total_spend", "SUM(spend)", "public_marts.fact_spend_daily",
+        ),
     },
     {
         "name": "KPI: Total Revenue",
         "metric_col": "total_revenue",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       COALESCE(SUM(revenue), 0) AS total_revenue
-FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start - period_days FROM params)
-  AND report_date <  (SELECT range_start FROM params)
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       COALESCE(SUM(revenue), 0) AS total_revenue
-FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start FROM params)
-  AND report_date <= (SELECT range_end FROM params)
-ORDER BY date
-""",
+        "sql": _single_table_kpi_sql(
+            "total_revenue", "SUM(revenue)", "public_marts.fact_kpi_daily",
+        ),
     },
     {
         "name": "KPI: ROAS",
         "metric_col": "roas",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(revenue) FROM public_marts.fact_kpi_daily
-          WHERE report_date >= (SELECT range_start - period_days FROM params)
-            AND report_date <  (SELECT range_start FROM params))
-         / NULLIF(
-           (SELECT SUM(spend) FROM public_marts.fact_spend_daily
-            WHERE report_date >= (SELECT range_start - period_days FROM params)
-              AND report_date <  (SELECT range_start FROM params)), 0),
-         0)::numeric, 2) AS roas
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(revenue) FROM public_marts.fact_kpi_daily
-          WHERE report_date >= (SELECT range_start FROM params)
-            AND report_date <= (SELECT range_end FROM params))
-         / NULLIF(
-           (SELECT SUM(spend) FROM public_marts.fact_spend_daily
-            WHERE report_date >= (SELECT range_start FROM params)
-              AND report_date <= (SELECT range_end FROM params)), 0),
-         0)::numeric, 2) AS roas
-ORDER BY date
-""",
+        "sql": _ratio_kpi_sql(
+            "roas",
+            "SUM(revenue)", "public_marts.fact_kpi_daily",
+            "SUM(spend)", "public_marts.fact_spend_daily",
+        ),
     },
     {
         "name": "KPI: Total Orders",
         "metric_col": "total_orders",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       COALESCE(SUM(orders), 0) AS total_orders
-FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start - period_days FROM params)
-  AND report_date <  (SELECT range_start FROM params)
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       COALESCE(SUM(orders), 0) AS total_orders
-FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start FROM params)
-  AND report_date <= (SELECT range_end FROM params)
-ORDER BY date
-""",
+        "sql": _single_table_kpi_sql(
+            "total_orders", "SUM(orders)", "public_marts.fact_kpi_daily",
+        ),
     },
     {
         "name": "KPI: CPA",
         "metric_col": "cpa",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(spend) FROM public_marts.fact_spend_daily
-          WHERE report_date >= (SELECT range_start - period_days FROM params)
-            AND report_date <  (SELECT range_start FROM params))
-         / NULLIF(
-           (SELECT SUM(orders) FROM public_marts.fact_kpi_daily
-            WHERE report_date >= (SELECT range_start - period_days FROM params)
-              AND report_date <  (SELECT range_start FROM params)), 0),
-         0)::numeric, 2) AS cpa
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(spend) FROM public_marts.fact_spend_daily
-          WHERE report_date >= (SELECT range_start FROM params)
-            AND report_date <= (SELECT range_end FROM params))
-         / NULLIF(
-           (SELECT SUM(orders) FROM public_marts.fact_kpi_daily
-            WHERE report_date >= (SELECT range_start FROM params)
-              AND report_date <= (SELECT range_end FROM params)), 0),
-         0)::numeric, 2) AS cpa
-ORDER BY date
-""",
+        "sql": _ratio_kpi_sql(
+            "cpa",
+            "SUM(spend)", "public_marts.fact_spend_daily",
+            "SUM(orders)", "public_marts.fact_kpi_daily",
+        ),
     },
     {
         "name": "KPI: AOV",
         "metric_col": "aov",
-        "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
-SELECT (SELECT range_start - 1 FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(revenue) FROM public_marts.fact_kpi_daily
-          WHERE report_date >= (SELECT range_start - period_days FROM params)
-            AND report_date <  (SELECT range_start FROM params))
-         / NULLIF(
-           (SELECT SUM(orders) FROM public_marts.fact_kpi_daily
-            WHERE report_date >= (SELECT range_start - period_days FROM params)
-              AND report_date <  (SELECT range_start FROM params)), 0),
-         0)::numeric, 2) AS aov
-UNION ALL
-SELECT (SELECT range_end FROM params) AS date,
-       ROUND(COALESCE(
-         (SELECT SUM(revenue) FROM public_marts.fact_kpi_daily
-          WHERE report_date >= (SELECT range_start FROM params)
-            AND report_date <= (SELECT range_end FROM params))
-         / NULLIF(
-           (SELECT SUM(orders) FROM public_marts.fact_kpi_daily
-            WHERE report_date >= (SELECT range_start FROM params)
-              AND report_date <= (SELECT range_end FROM params)), 0),
-         0)::numeric, 2) AS aov
-ORDER BY date
-""",
+        "sql": _ratio_kpi_sql(
+            "aov",
+            "SUM(revenue)", "public_marts.fact_kpi_daily",
+            "SUM(orders)", "public_marts.fact_kpi_daily",
+        ),
     },
 ]
 
@@ -325,13 +290,33 @@ def build_template_tags() -> dict:
     }
 
 
+def _build_scalar_viz(metric_col: str) -> dict:
+    """Visualization settings for a scalar card with comparison arrow."""
+    return {
+        "scalar.field": metric_col,
+        "scalar.comparisons": [
+            {
+                "id": str(uuid.uuid4()).replace("-", "")[:12],
+                "type": "anotherColumn",
+                "column": "change_pct",
+                "label": "vs Previous Period",
+            },
+        ],
+        "column_settings": {
+            '["name","change_pct"]': {
+                "suffix": "%",
+            },
+        },
+    }
+
+
 def create_card_with_vars(
     headers: dict,
     database_id: int,
     name: str,
     sql: str,
     template_tags: dict,
-    display: str = "smartscalar",
+    display: str = "scalar",
     viz_settings: dict | None = None,
 ) -> dict | None:
     payload = {
@@ -426,30 +411,32 @@ def main() -> int:
 
     template_tags = build_template_tags()
 
-    # --- KPI Number Cards (smartscalar) ---
+    # --- KPI Number Cards (scalar + comparison) ---
     print(f"Adding KPI number cards to '{args.dashboard}' (id={dashboard_id})...\n")
     col = 0
     for card_def in KPI_NUMBER_CARDS:
+        viz = _build_scalar_viz(card_def["metric_col"])
         card = create_card_with_vars(
             headers,
             db_id,
             card_def["name"],
             card_def["sql"],
             template_tags,
-            display="smartscalar",
+            display="scalar",
+            viz_settings=viz,
         )
         if card:
             add_card_to_dashboard(
                 headers, dashboard_id, card["id"],
                 row=max_row, col=col, size_x=4, size_y=3,
             )
-            print(f"  ✓ {card_def['name']} (id={card['id']})")
+            print(f"  \u2713 {card_def['name']} (id={card['id']})")
             col += 4
             if col >= 12:
                 col = 0
                 max_row += 3
         else:
-            print(f"  ✗ {card_def['name']} — FAILED")
+            print(f"  \u2717 {card_def['name']} \u2014 FAILED")
 
     if col > 0:
         max_row += 3
@@ -472,28 +459,28 @@ def main() -> int:
                 headers, dashboard_id, card["id"],
                 row=max_row, col=col, size_x=6, size_y=4,
             )
-            print(f"  ✓ {chart_def['name']} (id={card['id']})")
+            print(f"  \u2713 {chart_def['name']} (id={card['id']})")
             col += 6
             if col >= 12:
                 col = 0
                 max_row += 4
         else:
-            print(f"  ✗ {chart_def['name']} — FAILED")
+            print(f"  \u2717 {chart_def['name']} \u2014 FAILED")
 
-    print(f"\n  → {METABASE_URL}/dashboard/{dashboard_id}")
+    print(f"\n  \u2192 {METABASE_URL}/dashboard/{dashboard_id}")
     print(
-        "\nDone! Each KPI card shows a big number with ↑/↓ % change arrow.\n"
+        "\nDone! Each KPI card shows a big number with '% vs Previous Period'.\n"
         "\nNext steps:\n"
         "  1. Open the dashboard in Metabase.\n"
-        "  2. Click the pencil icon (Edit) → Filter icon → add 2 filters:\n"
-        "     • Date picker → Single date → name it 'Start date'\n"
-        "     • Date picker → Single date → name it 'End date'\n"
+        "  2. Click the pencil icon (Edit) \u2192 Filter icon \u2192 add 2 filters:\n"
+        "     \u2022 Date picker \u2192 Single date \u2192 name it 'Start date'\n"
+        "     \u2022 Date picker \u2192 Single date \u2192 name it 'End date'\n"
         "  3. For each filter, click the gear icon and connect it to every card:\n"
-        "     • Start date  →  report_date_start\n"
-        "     • End date    →  report_date_end\n"
+        "     \u2022 Start date  \u2192  report_date_start\n"
+        "     \u2022 End date    \u2192  report_date_end\n"
         "  4. Save the dashboard.\n"
         "  5. Set the filters (e.g. Start: Feb 10, End: Feb 26) and the cards\n"
-        "     will show the aggregated KPI with comparison vs the prior period.\n"
+        "     will show the aggregated KPI with '% vs Previous Period'.\n"
     )
     return 0
 
