@@ -51,12 +51,12 @@ java -jar metabase.jar
 
 ### Step 2: Run the script
 
-```bash
-cd measurement-platform/dashboards/metabase
+**PowerShell (Windows):**
 
-# Set credentials
-export METABASE_EMAIL="your-admin-email"
-export METABASE_PASSWORD="your-password"
+```powershell
+cd "C:\Users\ReadyPlayerOne\Analytics Dashboard\measurement-platform\dashboards\metabase"
+$env:METABASE_EMAIL = "mitchell@nexocore.ca"
+$env:METABASE_PASSWORD = "@Emmajake123"
 
 # Creates a new "KPI Summary" dashboard with all cards
 python create_kpi_number_cards.py
@@ -64,6 +64,17 @@ python create_kpi_number_cards.py
 # Or add cards to an existing dashboard:
 python create_kpi_number_cards.py --dashboard "Executive Overview"
 ```
+
+**Bash / macOS / Linux:**
+
+```bash
+cd measurement-platform/dashboards/metabase
+export METABASE_EMAIL="your-admin-email"
+export METABASE_PASSWORD="your-password"
+python create_kpi_number_cards.py
+```
+
+> **Note:** On Windows PowerShell, use `$env:VAR = "value"` instead of `export VAR="value"`.
 
 ### Step 3: Add date filters to the dashboard
 
