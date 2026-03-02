@@ -1,31 +1,23 @@
 #!/usr/bin/env python3
 """
-Create KPI number cards with automatic previous-period comparison.
+Create KPI number cards with configurable comparison period.
 
 Each card uses Metabase's smartscalar (Trend) display:
   - Shows a large number for the selected date range
-  - Shows ↑/↓ arrow with % change vs the previous period
+  - Shows up/down arrow with % change vs the comparison period
 
-The previous period is auto-computed as the same number of days
-immediately before start_date.  Example:
-  Start: Feb 10, End: Feb 26  →  17-day period
-  Previous period: Jan 24 – Feb 9  (also 17 days)
+Comparison modes (set via the "Compare to" dashboard filter):
+  previous_period  — same # of days immediately before start date (default)
+  previous_year    — same date range one year earlier
 
-Only 2 dashboard date filters needed: Start date, End date.
-NO previous-period date filter needed — it's automatic.
+Example with Start=Feb 10, End=Feb 26 (17 days):
+  previous_period  -> compares to Jan 24 - Feb 9, 2026
+  previous_year    -> compares to Feb 10 - Feb 26, 2025
 
-Also creates comparison line charts that overlay current vs previous
-period on the same date axis.
-
-Cards created:
-  KPI: Total Spend       KPI: Total Revenue
-  KPI: ROAS              KPI: Total Orders
-  KPI: CPA               KPI: AOV
-  Spend: Current vs Previous Period   (line chart)
-  Revenue: Current vs Previous Period (line chart)
-
-Run with same env as create_mvp_dashboards.py:
-  METABASE_URL, METABASE_EMAIL, METABASE_PASSWORD (or METABASE_API_KEY)
+Dashboard filters needed:
+  Start date       (required)
+  End date         (required)
+  Compare to       (optional — defaults to previous_period)
 
 PowerShell usage:
   cd "C:\\...\\measurement-platform\\dashboards\\metabase"
@@ -59,35 +51,52 @@ from create_mvp_dashboards import (
 )
 
 # ---------------------------------------------------------------------------
-# Template-tag date variables
+# Shared SQL fragments
 # ---------------------------------------------------------------------------
-_P1 = "{{report_date_start}}::date"
-_P2 = "{{report_date_end}}::date"
-_DAYS = f"({_P2} - {_P1} + 1)"
+# The params + comp CTEs compute the comparison date range based on
+# the compare_mode variable.  Every card's SQL starts with these CTEs.
 
-# Reusable WHERE fragments
-_CURR = f"""report_date >= {_P1} AND report_date <= {_P2}"""
-_PREV = f"""report_date >= ({_P1} - {_DAYS}) AND report_date < {_P1}"""
+_PARAMS_CTE = """
+WITH params AS (
+  SELECT {{report_date_start}}::date AS s,
+         {{report_date_end}}::date   AS e,
+         ({{report_date_end}}::date - {{report_date_start}}::date + 1) AS days,
+         {{compare_mode}} AS cmp
+),
+comp AS (
+  SELECT
+    CASE WHEN cmp = 'previous_year'
+         THEN (s - INTERVAL '1 year')::date
+         ELSE s - days
+    END AS cs,
+    CASE WHEN cmp = 'previous_year'
+         THEN (e - INTERVAL '1 year')::date
+         ELSE s - 1
+    END AS ce
+  FROM params
+)"""
+
+# WHERE helpers (reference the CTEs above)
+_W_CURR = "report_date >= (SELECT s FROM params) AND report_date <= (SELECT e FROM params)"
+_W_COMP = "report_date >= (SELECT cs FROM comp) AND report_date <= (SELECT ce FROM comp)"
 
 
 # ---------------------------------------------------------------------------
-# SQL builders — each returns 2 rows (prev, curr) for smartscalar display.
-# Metabase Trend shows the latest row as the big number and computes
-# ↑/↓ % change vs the previous row.
+# SQL builders
 # ---------------------------------------------------------------------------
 
 def _simple_kpi_sql(metric_col: str, agg: str, table: str) -> str:
     """KPI from a single table (e.g. SUM(spend) from fact_spend_daily)."""
-    return f"""
-SELECT ({_P1} - 1) AS date,
+    return f"""{_PARAMS_CTE}
+SELECT (SELECT ce FROM comp) AS date,
        COALESCE({agg}, 0) AS {metric_col}
 FROM {table}
-WHERE {_PREV}
+WHERE {_W_COMP}
 UNION ALL
-SELECT {_P2} AS date,
+SELECT (SELECT e FROM params) AS date,
        COALESCE({agg}, 0) AS {metric_col}
 FROM {table}
-WHERE {_CURR}
+WHERE {_W_CURR}
 ORDER BY date
 """
 
@@ -97,27 +106,46 @@ def _ratio_kpi_sql(
     num_agg: str, num_table: str,
     den_agg: str, den_table: str,
 ) -> str:
-    """KPI that is a ratio across two tables (e.g. ROAS = revenue/spend)."""
-    return f"""
-SELECT ({_P1} - 1) AS date,
+    """KPI ratio across two tables (e.g. ROAS = revenue / spend)."""
+    return f"""{_PARAMS_CTE}
+SELECT (SELECT ce FROM comp) AS date,
        ROUND(COALESCE(
-         (SELECT {num_agg} FROM {num_table} WHERE {_PREV})
+         (SELECT {num_agg} FROM {num_table} WHERE {_W_COMP})
          / NULLIF(
-           (SELECT {den_agg} FROM {den_table} WHERE {_PREV}), 0),
+           (SELECT {den_agg} FROM {den_table} WHERE {_W_COMP}), 0),
          0)::numeric, 2) AS {metric_col}
 UNION ALL
-SELECT {_P2} AS date,
+SELECT (SELECT e FROM params) AS date,
        ROUND(COALESCE(
-         (SELECT {num_agg} FROM {num_table} WHERE {_CURR})
+         (SELECT {num_agg} FROM {num_table} WHERE {_W_CURR})
          / NULLIF(
-           (SELECT {den_agg} FROM {den_table} WHERE {_CURR}), 0),
+           (SELECT {den_agg} FROM {den_table} WHERE {_W_CURR}), 0),
          0)::numeric, 2) AS {metric_col}
 ORDER BY date
 """
 
 
+def _comparison_chart_sql(metric_col: str, agg: str, table: str) -> str:
+    """Line chart overlaying current vs comparison period on same date axis."""
+    return f"""{_PARAMS_CTE}
+SELECT 'Current Period' AS period, report_date AS date,
+       COALESCE({agg}, 0) AS {metric_col}
+FROM {table}
+WHERE {_W_CURR}
+GROUP BY report_date
+UNION ALL
+SELECT 'Previous Period' AS period,
+       (report_date + ((SELECT s FROM params) - (SELECT cs FROM comp)))::date AS date,
+       COALESCE({agg}, 0) AS {metric_col}
+FROM {table}
+WHERE {_W_COMP}
+GROUP BY report_date, ((SELECT s FROM params) - (SELECT cs FROM comp))
+ORDER BY date, period
+"""
+
+
 # ---------------------------------------------------------------------------
-# KPI Number Cards (smartscalar / Trend display)
+# Card definitions
 # ---------------------------------------------------------------------------
 KPI_NUMBER_CARDS: list[dict] = [
     {
@@ -164,55 +192,18 @@ KPI_NUMBER_CARDS: list[dict] = [
     },
 ]
 
-# ---------------------------------------------------------------------------
-# Comparison Line Charts (overlay current vs previous on same date axis)
-# ---------------------------------------------------------------------------
 COMPARISON_CHARTS: list[dict] = [
     {
         "name": "Spend: Current vs Previous Period",
         "display": "line",
-        "viz": {
-            "graph.dimensions": ["date", "period"],
-            "graph.metrics": ["spend"],
-        },
-        "sql": f"""
-SELECT 'Current Period' AS period, report_date AS date,
-       COALESCE(SUM(spend), 0) AS spend
-FROM public_marts.fact_spend_daily
-WHERE {_CURR}
-GROUP BY report_date
-UNION ALL
-SELECT 'Previous Period' AS period,
-       (report_date + {_DAYS})::date AS date,
-       COALESCE(SUM(spend), 0) AS spend
-FROM public_marts.fact_spend_daily
-WHERE {_PREV}
-GROUP BY report_date, {_DAYS}
-ORDER BY date, period
-""",
+        "viz": {"graph.dimensions": ["date", "period"], "graph.metrics": ["spend"]},
+        "sql": _comparison_chart_sql("spend", "SUM(spend)", "public_marts.fact_spend_daily"),
     },
     {
         "name": "Revenue: Current vs Previous Period",
         "display": "line",
-        "viz": {
-            "graph.dimensions": ["date", "period"],
-            "graph.metrics": ["revenue"],
-        },
-        "sql": f"""
-SELECT 'Current Period' AS period, report_date AS date,
-       COALESCE(SUM(revenue), 0) AS revenue
-FROM public_marts.fact_kpi_daily
-WHERE {_CURR}
-GROUP BY report_date
-UNION ALL
-SELECT 'Previous Period' AS period,
-       (report_date + {_DAYS})::date AS date,
-       COALESCE(SUM(revenue), 0) AS revenue
-FROM public_marts.fact_kpi_daily
-WHERE {_PREV}
-GROUP BY report_date, {_DAYS}
-ORDER BY date, period
-""",
+        "viz": {"graph.dimensions": ["date", "period"], "graph.metrics": ["revenue"]},
+        "sql": _comparison_chart_sql("revenue", "SUM(revenue)", "public_marts.fact_kpi_daily"),
     },
 ]
 
@@ -222,7 +213,6 @@ ORDER BY date, period
 # ---------------------------------------------------------------------------
 
 def build_template_tags() -> dict:
-    """Two date variables: Start date + End date."""
     return {
         "report_date_start": {
             "id": str(uuid.uuid4()).replace("-", "")[:8],
@@ -235,6 +225,13 @@ def build_template_tags() -> dict:
             "name": "report_date_end",
             "display-name": "End date",
             "type": "date",
+        },
+        "compare_mode": {
+            "id": str(uuid.uuid4()).replace("-", "")[:8],
+            "name": "compare_mode",
+            "display-name": "Compare to",
+            "type": "text",
+            "default": "previous_period",
         },
     }
 
@@ -263,36 +260,21 @@ def create_card_with_vars(
         "visualization_settings": viz_settings or {},
     }
     r = requests.post(
-        f"{METABASE_URL}/api/card",
-        json=payload,
-        headers=headers,
-        timeout=30,
+        f"{METABASE_URL}/api/card", json=payload, headers=headers, timeout=30,
     )
     if r.status_code not in (200, 201):
-        print(
-            f"Create card '{name}' failed: {r.status_code} {r.text[:300]}",
-            file=sys.stderr,
-        )
+        print(f"Create card '{name}' failed: {r.status_code} {r.text[:300]}", file=sys.stderr)
         return None
     return r.json()
 
 
-def get_or_create_dashboard(
-    headers: dict,
-    name: str,
-    existing_names: set[str],
-) -> dict | None:
+def get_or_create_dashboard(headers: dict, name: str, existing_names: set[str]) -> dict | None:
     if name in existing_names:
-        dashboards = list_dashboards(headers)
-        for d in dashboards:
+        for d in list_dashboards(headers):
             if d.get("name") == name:
                 dash_id = d.get("id")
                 if dash_id:
-                    r = requests.get(
-                        f"{METABASE_URL}/api/dashboard/{dash_id}",
-                        headers=headers,
-                        timeout=30,
-                    )
+                    r = requests.get(f"{METABASE_URL}/api/dashboard/{dash_id}", headers=headers, timeout=30)
                     if r.status_code == 200:
                         return r.json()
                 return d
@@ -306,11 +288,8 @@ def get_or_create_dashboard(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create KPI number cards with comparison")
-    parser.add_argument(
-        "--dashboard",
-        default="KPI Summary",
-        help='Target dashboard name (default: "KPI Summary")',
-    )
+    parser.add_argument("--dashboard", default="KPI Summary",
+                        help='Target dashboard name (default: "KPI Summary")')
     args = parser.parse_args()
 
     session_id = login()
@@ -333,37 +312,26 @@ def main() -> int:
 
     dashboard_id = dash["id"]
     dashcards = dash.get("dashcards", [])
-    max_row = max(
-        (dc.get("row", 0) + dc.get("size_y", 4) for dc in dashcards),
-        default=0,
-    )
+    max_row = max((dc.get("row", 0) + dc.get("size_y", 4) for dc in dashcards), default=0)
 
     template_tags = build_template_tags()
 
-    # --- KPI Number Cards (smartscalar / Trend) ---
+    # --- KPI Number Cards ---
     print(f"Adding KPI number cards to '{args.dashboard}' (id={dashboard_id})...\n")
     col = 0
     for card_def in KPI_NUMBER_CARDS:
-        card = create_card_with_vars(
-            headers,
-            db_id,
-            card_def["name"],
-            card_def["sql"],
-            template_tags,
-            display="smartscalar",
-        )
+        card = create_card_with_vars(headers, db_id, card_def["name"], card_def["sql"],
+                                     template_tags, display="smartscalar")
         if card:
-            add_card_to_dashboard(
-                headers, dashboard_id, card["id"],
-                row=max_row, col=col, size_x=4, size_y=3,
-            )
-            print(f"  \u2713 {card_def['name']} (id={card['id']})")
+            add_card_to_dashboard(headers, dashboard_id, card["id"],
+                                  row=max_row, col=col, size_x=4, size_y=3)
+            print(f"  + {card_def['name']} (id={card['id']})")
             col += 4
             if col >= 12:
                 col = 0
                 max_row += 3
         else:
-            print(f"  \u2717 {card_def['name']} \u2014 FAILED")
+            print(f"  FAILED: {card_def['name']}")
 
     if col > 0:
         max_row += 3
@@ -372,37 +340,33 @@ def main() -> int:
     # --- Comparison Line Charts ---
     print("\nAdding comparison line charts...\n")
     for chart_def in COMPARISON_CHARTS:
-        card = create_card_with_vars(
-            headers,
-            db_id,
-            chart_def["name"],
-            chart_def["sql"],
-            template_tags,
-            display=chart_def["display"],
-            viz_settings=chart_def.get("viz"),
-        )
+        card = create_card_with_vars(headers, db_id, chart_def["name"], chart_def["sql"],
+                                     template_tags, display=chart_def["display"],
+                                     viz_settings=chart_def.get("viz"))
         if card:
-            add_card_to_dashboard(
-                headers, dashboard_id, card["id"],
-                row=max_row, col=col, size_x=6, size_y=4,
-            )
-            print(f"  \u2713 {chart_def['name']} (id={card['id']})")
+            add_card_to_dashboard(headers, dashboard_id, card["id"],
+                                  row=max_row, col=col, size_x=6, size_y=4)
+            print(f"  + {chart_def['name']} (id={card['id']})")
             col += 6
             if col >= 12:
                 col = 0
                 max_row += 4
         else:
-            print(f"  \u2717 {chart_def['name']} \u2014 FAILED")
+            print(f"  FAILED: {chart_def['name']}")
 
-    print(f"\n  \u2192 {METABASE_URL}/dashboard/{dashboard_id}")
-    print(
-        "\nDone! Each KPI card shows a big number with comparison arrow.\n"
-        "\nNote: Metabase labels the comparison 'vs. previous day' but the\n"
-        "VALUES are correct full-period aggregates. See KPI_NUMBER_CARDS_SETUP.md\n"
-        "for how to rename the comparison label in each card.\n"
-        "\nReminder: You only need 2 date filters (Start date + End date).\n"
-        "The previous period is calculated automatically.\n"
-    )
+    print(f"\n  -> {METABASE_URL}/dashboard/{dashboard_id}")
+    print("""
+Done! Now add 3 dashboard filters:
+
+  1. Start date      -> wire to "report_date_start" on all cards
+  2. End date        -> wire to "report_date_end" on all cards
+  3. Compare to      -> wire to "compare_mode" on all cards
+                        (Text/Category filter — type one of:)
+                          previous_period   (default — prior N days)
+                          previous_year     (same dates last year)
+
+If you don't add the "Compare to" filter, it defaults to previous_period.
+""")
     return 0
 
 

@@ -26,17 +26,27 @@ Each card is a **big number with a comparison arrow**. No tables, no individual 
 
 ---
 
-## How the previous period works
+## Comparison modes
 
-The previous period is **automatically calculated** — same number of days, immediately before your start date.
+You control what the cards compare against using the **"Compare to"** filter:
 
-| You select | Period length | Previous period (auto) |
-|------------|---------------|----------------------|
-| Feb 10 – Feb 26 | 17 days | Jan 24 – Feb 9 |
-| Feb 1 – Feb 28 | 28 days | Jan 4 – Jan 31 |
-| Jan 1 – Mar 31 | 90 days | Oct 3 – Dec 31 |
+| Mode | What it compares | Example (Feb 10–26, 2026) |
+|------|-----------------|---------------------------|
+| `previous_period` | Same # of days immediately before start date | Jan 24 – Feb 9, 2026 |
+| `previous_year` | Same date range one year earlier | Feb 10 – Feb 26, 2025 |
 
-You only need **2 date filters** (Start date, End date). No manual comparison dates required.
+If you don't set the filter, it defaults to `previous_period`.
+
+### More examples
+
+| You select | Mode | Comparison period |
+|------------|------|-------------------|
+| Feb 1 – Feb 28 | `previous_period` | Jan 4 – Jan 31 |
+| Feb 1 – Feb 28 | `previous_year` | Feb 1 – Feb 28, 2025 |
+| Jan 1 – Mar 31 (90 days) | `previous_period` | Oct 3 – Dec 31 |
+| Jan 1 – Mar 31 | `previous_year` | Jan 1 – Mar 31, 2025 |
+
+Dashboard filters needed: **Start date**, **End date**, and optionally **Compare to**.
 
 ---
 
@@ -76,25 +86,29 @@ python create_kpi_number_cards.py
 
 > **Note:** On Windows PowerShell, use `$env:VAR = "value"` instead of `export VAR="value"`.
 
-### Step 3: Add date filters to the dashboard
+### Step 3: Add filters to the dashboard
 
 1. Open the dashboard in Metabase.
-2. Click the **pencil icon** (Edit) → **Filter icon** → add 2 filters:
+2. Click the **pencil icon** (Edit) → **Filter icon** → add 3 filters:
    - **Date picker** → **Single date** → name it **Start date**
    - **Date picker** → **Single date** → name it **End date**
+   - **Text or Category** → name it **Compare to**
 3. For **each filter**, click the gear icon and wire it to **every card**:
    - **Start date** → `report_date_start` (on all 8 cards)
    - **End date** → `report_date_end` (on all 8 cards)
+   - **Compare to** → `compare_mode` (on all 8 cards)
 4. **Save** the dashboard.
 
 ### Step 4: Use it
 
 1. Set **Start date** = Feb 10, 2026
 2. Set **End date** = Feb 26, 2026
-3. Each KPI card now shows:
+3. Set **Compare to** = `previous_period` (or leave blank for the default)
+4. Each KPI card now shows:
    - The aggregated value for Feb 10–26 (big number)
-   - ↑/↓ % change vs Jan 24 – Feb 9 (arrow in the corner)
-4. The line charts show daily spend/revenue for both periods overlaid.
+   - ↑/↓ % change vs Jan 24 – Feb 9 (arrow)
+5. Change **Compare to** = `previous_year` to compare against Feb 10–26, 2025 instead.
+6. The line charts show daily spend/revenue for both periods overlaid.
 
 ---
 
@@ -134,9 +148,11 @@ To rename the label in each card:
 
 The overlay charts shift previous-period dates forward by `period_days` so both periods align on the same x-axis. This lets you visually compare daily trends side by side.
 
-### Do I need a "Previous period" date filter?
+### Do I need separate "Previous period" start/end date filters?
 
-**No.** The SQL auto-calculates the previous period from your Start and End dates. If you pick a 17-day range, it automatically looks back 17 days before your start date. You only need 2 filters: Start date and End date.
+**No.** The SQL auto-calculates the comparison dates. You only need 3 filters:
+- **Start date** + **End date** (your date range)
+- **Compare to** (optional — `previous_period` or `previous_year`)
 
 ---
 
