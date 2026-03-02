@@ -118,9 +118,25 @@ Metabase's smartscalar automatically:
 2. Computes **% change** vs the previous row (8.50 → 10.20 = +20%)
 3. Shows an **↑ arrow** in green (or ↓ in red if the value decreased)
 
+### About the "vs. previous day" label
+
+Metabase's Trend display labels the comparison as "vs. previous day" because it sees two date-based rows and doesn't know they represent full-period aggregates. **The values and percentages are correct** — the comparison IS the full previous period, not just one day.
+
+To rename the label in each card:
+
+1. Click on the KPI card to open it.
+2. Click the **Visualization** button (bottom left).
+3. In the settings panel, find the comparison section.
+4. Click the comparison text ("vs. previous day") and rename it to **"vs Previous Period"**.
+5. Click **Save**.
+
 ### Comparison line charts
 
 The overlay charts shift previous-period dates forward by `period_days` so both periods align on the same x-axis. This lets you visually compare daily trends side by side.
+
+### Do I need a "Previous period" date filter?
+
+**No.** The SQL auto-calculates the previous period from your Start and End dates. If you pick a 17-day range, it automatically looks back 17 days before your start date. You only need 2 filters: Start date and End date.
 
 ---
 

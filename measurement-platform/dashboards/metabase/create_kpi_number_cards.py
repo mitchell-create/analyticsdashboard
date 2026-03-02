@@ -2,9 +2,9 @@
 """
 Create KPI number cards with automatic previous-period comparison.
 
-Each card shows:
-  - A large number for the selected date range
-  - ↑/↓ arrow with % change labeled "vs Previous Period"
+Each card uses Metabase's smartscalar (Trend) display:
+  - Shows a large number for the selected date range
+  - Shows ↑/↓ arrow with % change vs the previous period
 
 The previous period is auto-computed as the same number of days
 immediately before start_date.  Example:
@@ -12,6 +12,7 @@ immediately before start_date.  Example:
   Previous period: Jan 24 – Feb 9  (also 17 days)
 
 Only 2 dashboard date filters needed: Start date, End date.
+NO previous-period date filter needed — it's automatic.
 
 Also creates comparison line charts that overlay current vs previous
 period on the same date axis.
@@ -26,7 +27,10 @@ Cards created:
 Run with same env as create_mvp_dashboards.py:
   METABASE_URL, METABASE_EMAIL, METABASE_PASSWORD (or METABASE_API_KEY)
 
-Usage:
+PowerShell usage:
+  cd "C:\\...\\measurement-platform\\dashboards\\metabase"
+  $env:METABASE_EMAIL = "you@example.com"
+  $env:METABASE_PASSWORD = "password"
   python create_kpi_number_cards.py
   python create_kpi_number_cards.py --dashboard "Executive Overview"
 """
@@ -59,113 +63,72 @@ from create_mvp_dashboards import (
 # ---------------------------------------------------------------------------
 _P1 = "{{report_date_start}}::date"
 _P2 = "{{report_date_end}}::date"
+_DAYS = f"({_P2} - {_P1} + 1)"
 
-
-def _period_days_expr() -> str:
-    return f"({_P2} - {_P1} + 1)"
+# Reusable WHERE fragments
+_CURR = f"""report_date >= {_P1} AND report_date <= {_P2}"""
+_PREV = f"""report_date >= ({_P1} - {_DAYS}) AND report_date < {_P1}"""
 
 
 # ---------------------------------------------------------------------------
-# SQL builder helpers — each KPI query returns ONE row:
-#   metric_value  (the main big number)
-#   change_pct    (% change vs previous period, shown as comparison)
+# SQL builders — each returns 2 rows (prev, curr) for smartscalar display.
+# Metabase Trend shows the latest row as the big number and computes
+# ↑/↓ % change vs the previous row.
 # ---------------------------------------------------------------------------
 
-def _single_table_kpi_sql(metric_col: str, agg_expr: str, table: str) -> str:
-    """Build KPI SQL for metrics from a single table (SUM of one column)."""
+def _simple_kpi_sql(metric_col: str, agg: str, table: str) -> str:
+    """KPI from a single table (e.g. SUM(spend) from fact_spend_daily)."""
     return f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-),
-curr AS (
-  SELECT COALESCE({agg_expr}, 0) AS val
-  FROM {table}
-  WHERE report_date >= (SELECT range_start FROM params)
-    AND report_date <= (SELECT range_end FROM params)
-),
-prev AS (
-  SELECT COALESCE({agg_expr}, 0) AS val
-  FROM {table}
-  WHERE report_date >= (SELECT range_start - period_days FROM params)
-    AND report_date <  (SELECT range_start FROM params)
-)
-SELECT
-  ROUND(c.val::numeric, 2) AS {metric_col},
-  CASE WHEN p.val = 0 THEN 0
-       ELSE ROUND(((c.val - p.val) / p.val * 100)::numeric, 1)
-  END AS change_pct
-FROM curr c, prev p
+SELECT ({_P1} - 1) AS date,
+       COALESCE({agg}, 0) AS {metric_col}
+FROM {table}
+WHERE {_PREV}
+UNION ALL
+SELECT {_P2} AS date,
+       COALESCE({agg}, 0) AS {metric_col}
+FROM {table}
+WHERE {_CURR}
+ORDER BY date
 """
 
 
 def _ratio_kpi_sql(
     metric_col: str,
-    num_expr: str, num_table: str,
-    den_expr: str, den_table: str,
+    num_agg: str, num_table: str,
+    den_agg: str, den_table: str,
 ) -> str:
-    """Build KPI SQL for ratio metrics (numerator / denominator from different tables)."""
+    """KPI that is a ratio across two tables (e.g. ROAS = revenue/spend)."""
     return f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-),
-curr_num AS (
-  SELECT COALESCE({num_expr}, 0) AS val FROM {num_table}
-  WHERE report_date >= (SELECT range_start FROM params)
-    AND report_date <= (SELECT range_end FROM params)
-),
-curr_den AS (
-  SELECT COALESCE({den_expr}, 0) AS val FROM {den_table}
-  WHERE report_date >= (SELECT range_start FROM params)
-    AND report_date <= (SELECT range_end FROM params)
-),
-prev_num AS (
-  SELECT COALESCE({num_expr}, 0) AS val FROM {num_table}
-  WHERE report_date >= (SELECT range_start - period_days FROM params)
-    AND report_date <  (SELECT range_start FROM params)
-),
-prev_den AS (
-  SELECT COALESCE({den_expr}, 0) AS val FROM {den_table}
-  WHERE report_date >= (SELECT range_start - period_days FROM params)
-    AND report_date <  (SELECT range_start FROM params)
-),
-curr AS (
-  SELECT CASE WHEN cd.val = 0 THEN 0
-              ELSE ROUND((cn.val / cd.val)::numeric, 2) END AS val
-  FROM curr_num cn, curr_den cd
-),
-prev AS (
-  SELECT CASE WHEN pd.val = 0 THEN 0
-              ELSE ROUND((pn.val / pd.val)::numeric, 2) END AS val
-  FROM prev_num pn, prev_den pd
-)
-SELECT
-  c.val AS {metric_col},
-  CASE WHEN p.val = 0 THEN 0
-       ELSE ROUND(((c.val - p.val) / p.val * 100)::numeric, 1)
-  END AS change_pct
-FROM curr c, prev p
+SELECT ({_P1} - 1) AS date,
+       ROUND(COALESCE(
+         (SELECT {num_agg} FROM {num_table} WHERE {_PREV})
+         / NULLIF(
+           (SELECT {den_agg} FROM {den_table} WHERE {_PREV}), 0),
+         0)::numeric, 2) AS {metric_col}
+UNION ALL
+SELECT {_P2} AS date,
+       ROUND(COALESCE(
+         (SELECT {num_agg} FROM {num_table} WHERE {_CURR})
+         / NULLIF(
+           (SELECT {den_agg} FROM {den_table} WHERE {_CURR}), 0),
+         0)::numeric, 2) AS {metric_col}
+ORDER BY date
 """
 
 
 # ---------------------------------------------------------------------------
-# KPI Number Cards — scalar display with scalar.comparisons
+# KPI Number Cards (smartscalar / Trend display)
 # ---------------------------------------------------------------------------
 KPI_NUMBER_CARDS: list[dict] = [
     {
         "name": "KPI: Total Spend",
         "metric_col": "total_spend",
-        "sql": _single_table_kpi_sql(
-            "total_spend", "SUM(spend)", "public_marts.fact_spend_daily",
-        ),
+        "sql": _simple_kpi_sql("total_spend", "SUM(spend)", "public_marts.fact_spend_daily"),
     },
     {
         "name": "KPI: Total Revenue",
         "metric_col": "total_revenue",
-        "sql": _single_table_kpi_sql(
-            "total_revenue", "SUM(revenue)", "public_marts.fact_kpi_daily",
-        ),
+        "sql": _simple_kpi_sql("total_revenue", "SUM(revenue)", "public_marts.fact_kpi_daily"),
     },
     {
         "name": "KPI: ROAS",
@@ -179,9 +142,7 @@ KPI_NUMBER_CARDS: list[dict] = [
     {
         "name": "KPI: Total Orders",
         "metric_col": "total_orders",
-        "sql": _single_table_kpi_sql(
-            "total_orders", "SUM(orders)", "public_marts.fact_kpi_daily",
-        ),
+        "sql": _simple_kpi_sql("total_orders", "SUM(orders)", "public_marts.fact_kpi_daily"),
     },
     {
         "name": "KPI: CPA",
@@ -215,24 +176,18 @@ COMPARISON_CHARTS: list[dict] = [
             "graph.metrics": ["spend"],
         },
         "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
 SELECT 'Current Period' AS period, report_date AS date,
        COALESCE(SUM(spend), 0) AS spend
 FROM public_marts.fact_spend_daily
-WHERE report_date >= (SELECT range_start FROM params)
-  AND report_date <= (SELECT range_end FROM params)
+WHERE {_CURR}
 GROUP BY report_date
 UNION ALL
 SELECT 'Previous Period' AS period,
-       (report_date + (SELECT period_days FROM params))::date AS date,
+       (report_date + {_DAYS})::date AS date,
        COALESCE(SUM(spend), 0) AS spend
 FROM public_marts.fact_spend_daily
-WHERE report_date >= (SELECT range_start - period_days FROM params)
-  AND report_date <  (SELECT range_start FROM params)
-GROUP BY report_date, (SELECT period_days FROM params)
+WHERE {_PREV}
+GROUP BY report_date, {_DAYS}
 ORDER BY date, period
 """,
     },
@@ -244,24 +199,18 @@ ORDER BY date, period
             "graph.metrics": ["revenue"],
         },
         "sql": f"""
-WITH params AS (
-  SELECT {_P1} AS range_start, {_P2} AS range_end,
-         {_period_days_expr()} AS period_days
-)
 SELECT 'Current Period' AS period, report_date AS date,
        COALESCE(SUM(revenue), 0) AS revenue
 FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start FROM params)
-  AND report_date <= (SELECT range_end FROM params)
+WHERE {_CURR}
 GROUP BY report_date
 UNION ALL
 SELECT 'Previous Period' AS period,
-       (report_date + (SELECT period_days FROM params))::date AS date,
+       (report_date + {_DAYS})::date AS date,
        COALESCE(SUM(revenue), 0) AS revenue
 FROM public_marts.fact_kpi_daily
-WHERE report_date >= (SELECT range_start - period_days FROM params)
-  AND report_date <  (SELECT range_start FROM params)
-GROUP BY report_date, (SELECT period_days FROM params)
+WHERE {_PREV}
+GROUP BY report_date, {_DAYS}
 ORDER BY date, period
 """,
     },
@@ -290,33 +239,13 @@ def build_template_tags() -> dict:
     }
 
 
-def _build_scalar_viz(metric_col: str) -> dict:
-    """Visualization settings for a scalar card with comparison arrow."""
-    return {
-        "scalar.field": metric_col,
-        "scalar.comparisons": [
-            {
-                "id": str(uuid.uuid4()).replace("-", "")[:12],
-                "type": "anotherColumn",
-                "column": "change_pct",
-                "label": "vs Previous Period",
-            },
-        ],
-        "column_settings": {
-            '["name","change_pct"]': {
-                "suffix": "%",
-            },
-        },
-    }
-
-
 def create_card_with_vars(
     headers: dict,
     database_id: int,
     name: str,
     sql: str,
     template_tags: dict,
-    display: str = "scalar",
+    display: str = "smartscalar",
     viz_settings: dict | None = None,
 ) -> dict | None:
     payload = {
@@ -411,19 +340,17 @@ def main() -> int:
 
     template_tags = build_template_tags()
 
-    # --- KPI Number Cards (scalar + comparison) ---
+    # --- KPI Number Cards (smartscalar / Trend) ---
     print(f"Adding KPI number cards to '{args.dashboard}' (id={dashboard_id})...\n")
     col = 0
     for card_def in KPI_NUMBER_CARDS:
-        viz = _build_scalar_viz(card_def["metric_col"])
         card = create_card_with_vars(
             headers,
             db_id,
             card_def["name"],
             card_def["sql"],
             template_tags,
-            display="scalar",
-            viz_settings=viz,
+            display="smartscalar",
         )
         if card:
             add_card_to_dashboard(
@@ -469,18 +396,12 @@ def main() -> int:
 
     print(f"\n  \u2192 {METABASE_URL}/dashboard/{dashboard_id}")
     print(
-        "\nDone! Each KPI card shows a big number with '% vs Previous Period'.\n"
-        "\nNext steps:\n"
-        "  1. Open the dashboard in Metabase.\n"
-        "  2. Click the pencil icon (Edit) \u2192 Filter icon \u2192 add 2 filters:\n"
-        "     \u2022 Date picker \u2192 Single date \u2192 name it 'Start date'\n"
-        "     \u2022 Date picker \u2192 Single date \u2192 name it 'End date'\n"
-        "  3. For each filter, click the gear icon and connect it to every card:\n"
-        "     \u2022 Start date  \u2192  report_date_start\n"
-        "     \u2022 End date    \u2192  report_date_end\n"
-        "  4. Save the dashboard.\n"
-        "  5. Set the filters (e.g. Start: Feb 10, End: Feb 26) and the cards\n"
-        "     will show the aggregated KPI with '% vs Previous Period'.\n"
+        "\nDone! Each KPI card shows a big number with comparison arrow.\n"
+        "\nNote: Metabase labels the comparison 'vs. previous day' but the\n"
+        "VALUES are correct full-period aggregates. See KPI_NUMBER_CARDS_SETUP.md\n"
+        "for how to rename the comparison label in each card.\n"
+        "\nReminder: You only need 2 date filters (Start date + End date).\n"
+        "The previous period is calculated automatically.\n"
     )
     return 0
 
