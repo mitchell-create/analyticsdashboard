@@ -52,7 +52,15 @@ def login() -> str | None:
     return r.json().get("id")
 
 
-def get_database_id(headers: dict) -> int | None:
+def get_database_id(headers: dict, database_id: int | None = None, database_name: str | None = None) -> int | None:
+    """Return a Metabase database id.
+
+    If *database_id* is given, return it directly (caller knows the id).
+    If *database_name* is given, find the DB with that name.
+    Otherwise return the first non-sample DB (legacy behaviour).
+    """
+    if database_id:
+        return database_id
     r = requests.get(f"{METABASE_URL}/api/database", headers=headers, timeout=30)
     if r.status_code != 200:
         print(f"GET /api/database failed: {r.status_code}", file=sys.stderr)
@@ -61,12 +69,29 @@ def get_database_id(headers: dict) -> int | None:
     dbs = data.get("data", data) if isinstance(data, dict) else data
     if not isinstance(dbs, list):
         dbs = []
-    # Prefer DB named like "Analytics Warehouse" or first non-sample
+    if database_name:
+        for db in dbs:
+            if db.get("name") == database_name:
+                return db["id"]
+        print(f"Database '{database_name}' not found in Metabase.", file=sys.stderr)
+        return None
     for db in dbs:
         if db.get("is_sample") or db.get("name") == "Sample Database":
             continue
         return db["id"]
     return None
+
+
+def list_databases(headers: dict) -> list[dict]:
+    """Return all non-sample databases (useful for multi-client listing)."""
+    r = requests.get(f"{METABASE_URL}/api/database", headers=headers, timeout=30)
+    if r.status_code != 200:
+        return []
+    data = r.json()
+    dbs = data.get("data", data) if isinstance(data, dict) else data
+    if not isinstance(dbs, list):
+        return []
+    return [db for db in dbs if not db.get("is_sample") and db.get("name") != "Sample Database"]
 
 
 def create_card(
@@ -351,42 +376,45 @@ def _create_dashboard_with_cards(
     return True
 
 
+def _parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="Create MVP dashboards in Metabase")
+    parser.add_argument("--client", help="Client slug — prefixes dashboard names (e.g. 'acme' → 'acme — Executive Overview')")
+    parser.add_argument("--database-id", type=int, help="Metabase database id to use (skip auto-detect)")
+    parser.add_argument("--database-name", help="Metabase database name to use (e.g. 'measurement-acme')")
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = _parse_args()
+
     session_id = login()
     if session_id is None:
         return 1
     headers = get_headers(session_id)
 
-    db_id = get_database_id(headers)
+    db_id = get_database_id(headers, database_id=args.database_id, database_name=args.database_name)
     if not db_id:
         print("No database found. Add your Supabase DB in Metabase first.", file=sys.stderr)
         return 1
     print(f"Using database id: {db_id}\n")
 
+    prefix = f"{args.client} — " if args.client else ""
+
     dashboards = list_dashboards(headers)
     existing_names = {d.get("name") for d in dashboards if d.get("name")}
 
-    # Dashboard 1: Executive Overview
     _create_dashboard_with_cards(
-        headers, db_id, "Executive Overview", EXEC_OVERVIEW_QUESTIONS, existing_names
+        headers, db_id, f"{prefix}Executive Overview", EXEC_OVERVIEW_QUESTIONS, existing_names
     )
-    existing_names.add("Executive Overview")
-
-    # Dashboard 2: Channel Performance
     _create_dashboard_with_cards(
-        headers, db_id, "Channel Performance", CHANNEL_PERFORMANCE_QUESTIONS, existing_names
+        headers, db_id, f"{prefix}Channel Performance", CHANNEL_PERFORMANCE_QUESTIONS, existing_names
     )
-    existing_names.add("Channel Performance")
-
-    # Dashboard 3: Email / Klaviyo
     _create_dashboard_with_cards(
-        headers, db_id, "Email & Klaviyo", EMAIL_KLAVIYO_QUESTIONS, existing_names
+        headers, db_id, f"{prefix}Email & Klaviyo", EMAIL_KLAVIYO_QUESTIONS, existing_names
     )
-    existing_names.add("Email & Klaviyo")
-
-    # Dashboard 4: Experiment Results
     _create_dashboard_with_cards(
-        headers, db_id, "Experiment Results", EXPERIMENT_RESULTS_QUESTIONS, existing_names
+        headers, db_id, f"{prefix}Experiment Results", EXPERIMENT_RESULTS_QUESTIONS, existing_names
     )
 
     print("Done.")

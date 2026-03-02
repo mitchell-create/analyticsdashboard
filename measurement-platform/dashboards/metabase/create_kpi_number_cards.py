@@ -290,6 +290,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Create KPI number cards with comparison")
     parser.add_argument("--dashboard", default="KPI Summary",
                         help='Target dashboard name (default: "KPI Summary")')
+    parser.add_argument("--client", help="Client slug — prefixes dashboard name (e.g. 'acme' → 'acme — KPI Summary')")
+    parser.add_argument("--database-id", type=int, help="Metabase database id (skip auto-detect)")
+    parser.add_argument("--database-name", help="Metabase database name (e.g. 'measurement-acme')")
     args = parser.parse_args()
 
     session_id = login()
@@ -297,10 +300,13 @@ def main() -> int:
         return 1
     headers = get_headers(session_id)
 
-    db_id = get_database_id(headers)
+    db_id = get_database_id(headers, database_id=args.database_id, database_name=args.database_name)
     if not db_id:
         print("No database found. Add your Supabase DB in Metabase first.", file=sys.stderr)
         return 1
+
+    if args.client:
+        args.dashboard = f"{args.client} — {args.dashboard}"
 
     dashboards = list_dashboards(headers)
     existing_names = {d.get("name") for d in dashboards if d.get("name")}
