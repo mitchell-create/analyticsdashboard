@@ -1,0 +1,4 @@
+platform,account_id,client_slug
+meta,act_REPLACE_WITH_META_ACCOUNT_ID,xpand
+google,REPLACE_WITH_GOOGLE_CUSTOMER_ID,xpand
+tiktok,REPLACE_WITH_TIKTOK_ADVERTISER_ID,xpand

@@ -1,5 +1,6 @@
--- stg_shopify_orders_geo — Order-level geo from shipping_address (province_code)
--- Extracts province_code from shipping_address JSONB for US orders; aggregates daily by geo.
+-- stg_shopify_orders_geo — Order-level geo from shipping_address (per-client table: {client_slug}_orders)
+-- Extracts province_code for US orders; aggregates daily by geo for GeoLift.
+
 {{
   config(
     materialized='view',
@@ -12,7 +13,7 @@ with source as (
     created_at::date as report_date,
     coalesce(total_price::numeric(14, 2), 0) as revenue,
     upper(trim(shipping_address->>'province_code')) as province_code
-  from {{ source('raw_airbyte', 'orders') }}
+  from {{ source('raw_shopify', 'orders') }}
   where financial_status in ('paid', 'partially_paid')
     and shipping_address is not null
     and coalesce(shipping_address->>'country_code', '') = 'US'

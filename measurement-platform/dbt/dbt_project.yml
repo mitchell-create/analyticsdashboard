@@ -20,7 +20,9 @@ clean-targets:
   - "dbt_packages"
 
 vars:
-  # Override per client: dbt run --vars '{client_slug: acme, raw_schema: raw_acme}'
+  # Override per client: dbt run --vars '{client_slug: xpand}'
+  # Shared platforms (Meta/Google/TikTok): client_slug derived from account ID mapping
+  # Per-client platforms (Shopify/Klaviyo): table prefix = {client_slug}_
   client_slug: default
   raw_schema: raw
 
@@ -50,3 +52,9 @@ seeds:
         geo_name: text
         geo_type: text
         country_code: text
+    client_ad_accounts:
+      +schema: marts
+      +column_types:
+        platform: text
+        account_id: text
+        client_slug: text

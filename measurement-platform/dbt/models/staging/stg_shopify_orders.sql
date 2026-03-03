@@ -1,5 +1,5 @@
--- stg_shopify_orders — Staging for Shopify orders (from Airbyte raw); aggregated to daily revenue/orders
--- Adjust source table and column names to match your Airbyte Shopify connector output.
+-- stg_shopify_orders — Staging for Shopify orders (per-client table: {client_slug}_orders)
+-- Aggregated to daily revenue/orders.
 
 {{
   config(
@@ -9,7 +9,7 @@
 }}
 
 with source as (
-  select * from {{ source('raw_airbyte', 'orders') }}
+  select * from {{ source('raw_shopify', 'orders') }}
 ),
 
 daily as (
