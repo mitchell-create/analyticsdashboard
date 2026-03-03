@@ -20,6 +20,7 @@ with source as (
 )
 
 select
+  '{{ var("client_slug") }}' as client_slug,
   report_date,
   province_code as geo_id,
   count(*)::int as orders,

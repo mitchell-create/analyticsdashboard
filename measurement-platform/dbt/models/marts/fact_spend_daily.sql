@@ -7,13 +7,13 @@
 }}
 
 with meta as (
-  select report_date, channel, spend, impressions, clicks from {{ ref('stg_meta_spend') }}
+  select client_slug, report_date, channel, spend, impressions, clicks from {{ ref('stg_meta_spend') }}
 ),
 google as (
-  select report_date, channel, spend, impressions, clicks from {{ ref('stg_google_spend') }}
+  select client_slug, report_date, channel, spend, impressions, clicks from {{ ref('stg_google_spend') }}
 ),
 tiktok as (
-  select report_date, channel, spend, impressions, clicks from {{ ref('stg_tiktok_spend') }}
+  select client_slug, report_date, channel, spend, impressions, clicks from {{ ref('stg_tiktok_spend') }}
 ),
 unioned as (
   select * from meta
@@ -23,10 +23,11 @@ unioned as (
   select * from tiktok
 )
 select
+  client_slug,
   report_date,
   channel,
   coalesce(sum(spend), 0) as spend,
   sum(impressions) as impressions,
   sum(clicks) as clicks
 from unioned
-group by 1, 2
+group by 1, 2, 3

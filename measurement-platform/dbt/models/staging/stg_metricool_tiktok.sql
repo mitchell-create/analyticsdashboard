@@ -14,6 +14,7 @@ with source as (
 
 renamed as (
   select
+    '{{ var("client_slug") }}' as client_slug,
     (report_date::date) as report_date,
     coalesce(views::bigint, 0) as views,
     likes::bigint as likes,

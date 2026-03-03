@@ -14,6 +14,7 @@ with source as (
 
 renamed as (
   select
+    '{{ var("client_slug") }}' as client_slug,
     date_trunc('day', (date_start::date))::date as report_date,
     'meta' as channel,
     coalesce(spend::numeric(14, 2), 0) as spend,

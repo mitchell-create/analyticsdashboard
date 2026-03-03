@@ -94,6 +94,20 @@ def list_databases(headers: dict) -> list[dict]:
     return [db for db in dbs if not db.get("is_sample") and db.get("name") != "Sample Database"]
 
 
+def _client_slug_tag() -> dict:
+    """Template tag for client_slug filter."""
+    import uuid
+    return {
+        "client_slug": {
+            "id": str(uuid.uuid4()).replace("-", "")[:8],
+            "name": "client_slug",
+            "display-name": "Client",
+            "type": "text",
+            "default": "default",
+        },
+    }
+
+
 def create_card(
     headers: dict,
     database_id: int,
@@ -101,13 +115,15 @@ def create_card(
     sql: str,
     display: str = "line",
     viz_settings: dict | None = None,
+    template_tags: dict | None = None,
 ) -> dict | None:
+    tags = template_tags if template_tags is not None else _client_slug_tag()
     payload = {
         "name": name,
         "database_id": database_id,
         "dataset_query": {
             "type": "native",
-            "native": {"query": sql, "template-tags": {}},
+            "native": {"query": sql, "template-tags": tags},
             "database": database_id,
         },
         "display": display,
@@ -209,87 +225,91 @@ def _add_card_via_put(
     return True
 
 
+# Client filter — all queries include WHERE client_slug = {{client_slug}}
+_CF = "client_slug = {{client_slug}}"
+
 # Executive Overview: questions from MVP spec (public_marts)
 EXEC_OVERVIEW_QUESTIONS = [
     {
         "name": "Daily revenue",
-        "sql": "SELECT report_date AS date, COALESCE(SUM(revenue), 0) AS revenue FROM public_marts.fact_kpi_daily GROUP BY report_date ORDER BY report_date",
+        "sql": f"SELECT report_date AS date, COALESCE(SUM(revenue), 0) AS revenue FROM public_marts.fact_kpi_daily WHERE {_CF} GROUP BY report_date ORDER BY report_date",
         "display": "line",
         "viz": {"graph.dimensions": ["date"], "graph.metrics": ["revenue"]},
     },
     {
         "name": "Daily orders",
-        "sql": "SELECT report_date AS date, COALESCE(SUM(orders), 0) AS orders FROM public_marts.fact_kpi_daily GROUP BY report_date ORDER BY report_date",
+        "sql": f"SELECT report_date AS date, COALESCE(SUM(orders), 0) AS orders FROM public_marts.fact_kpi_daily WHERE {_CF} GROUP BY report_date ORDER BY report_date",
         "display": "line",
         "viz": {"graph.dimensions": ["date"], "graph.metrics": ["orders"]},
     },
     {
         "name": "Spend by date",
-        "sql": "SELECT report_date AS date, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily GROUP BY report_date ORDER BY report_date",
+        "sql": f"SELECT report_date AS date, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily WHERE {_CF} GROUP BY report_date ORDER BY report_date",
         "display": "line",
         "viz": {"graph.dimensions": ["date"], "graph.metrics": ["spend"]},
     },
     {
         "name": "Total spend by channel",
-        "sql": "SELECT channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily GROUP BY channel ORDER BY spend DESC",
+        "sql": f"SELECT channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily WHERE {_CF} GROUP BY channel ORDER BY spend DESC",
         "display": "bar",
         "viz": {"graph.dimensions": ["channel"], "graph.metrics": ["spend"]},
     },
     {
         "name": "ROAS (revenue / spend)",
-        "sql": """SELECT
-  (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily) AS revenue,
-  (SELECT COALESCE(SUM(spend), 0) FROM public_marts.fact_spend_daily) AS spend,
-  CASE WHEN (SELECT COALESCE(SUM(spend), 0) FROM public_marts.fact_spend_daily) = 0 THEN 0
-       ELSE (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily)
-            / NULLIF((SELECT SUM(spend) FROM public_marts.fact_spend_daily), 0) END AS roas""",
+        "sql": f"""SELECT
+  (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily WHERE {_CF}) AS revenue,
+  (SELECT COALESCE(SUM(spend), 0) FROM public_marts.fact_spend_daily WHERE {_CF}) AS spend,
+  CASE WHEN (SELECT COALESCE(SUM(spend), 0) FROM public_marts.fact_spend_daily WHERE {_CF}) = 0 THEN 0
+       ELSE (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily WHERE {_CF})
+            / NULLIF((SELECT SUM(spend) FROM public_marts.fact_spend_daily WHERE {_CF}), 0) END AS roas""",
         "display": "table",
         "viz": {},
     },
 ]
 
-# Dashboard 3: Email / Klaviyo (from MVP spec; TikTok organic skipped - model disabled)
+# Dashboard 3: Email / Klaviyo
 EMAIL_KLAVIYO_QUESTIONS = [
     {
         "name": "Email sends by day",
-        "sql": "SELECT report_date AS date, COALESCE(SUM(sent), 0) AS sent FROM public_marts.fact_klaviyo_daily GROUP BY report_date ORDER BY report_date",
+        "sql": f"SELECT report_date AS date, COALESCE(SUM(sent), 0) AS sent FROM public_marts.fact_klaviyo_daily WHERE {_CF} GROUP BY report_date ORDER BY report_date",
         "display": "line",
         "viz": {"graph.dimensions": ["date"], "graph.metrics": ["sent"]},
     },
     {
         "name": "Email opens and clicks by day",
-        "sql": "SELECT report_date AS date, COALESCE(SUM(opens), 0) AS opens, COALESCE(SUM(clicks), 0) AS clicks FROM public_marts.fact_klaviyo_daily GROUP BY report_date ORDER BY report_date",
+        "sql": f"SELECT report_date AS date, COALESCE(SUM(opens), 0) AS opens, COALESCE(SUM(clicks), 0) AS clicks FROM public_marts.fact_klaviyo_daily WHERE {_CF} GROUP BY report_date ORDER BY report_date",
         "display": "line",
         "viz": {"graph.dimensions": ["date"], "graph.metrics": ["opens", "clicks"]},
     },
     {
         "name": "Klaviyo campaigns summary",
-        "sql": "SELECT campaign_id, report_date, sent, opens, clicks FROM public_marts.fact_klaviyo_daily ORDER BY report_date DESC, campaign_id LIMIT 50",
+        "sql": f"SELECT campaign_id, report_date, sent, opens, clicks FROM public_marts.fact_klaviyo_daily WHERE {_CF} ORDER BY report_date DESC, campaign_id LIMIT 50",
         "display": "table",
         "viz": {},
     },
 ]
 
-# Dashboard 4: Experiment Results (GeoLift, CausalImpact)
+# Dashboard 4: Experiment Results
 EXPERIMENT_RESULTS_QUESTIONS = [
     {
         "name": "Experiments list",
-        "sql": "SELECT id, experiment_slug, experiment_type, start_date, end_date, status, config FROM public.experiments ORDER BY id DESC",
+        "sql": f"SELECT id, experiment_slug, experiment_type, start_date, end_date, status, config FROM public.experiments WHERE {_CF} ORDER BY id DESC",
         "display": "table",
         "viz": {},
     },
     {
         "name": "Lift over time (by experiment)",
-        "sql": """SELECT e.experiment_slug, r.result_date AS date, r.metric, r.value, r.interval_lower, r.interval_upper
+        "sql": f"""SELECT e.experiment_slug, r.result_date AS date, r.metric, r.value, r.interval_lower, r.interval_upper
 FROM public.experiment_results r
 JOIN public.experiments e ON e.id = r.experiment_id
+WHERE e.{_CF}
 ORDER BY e.experiment_slug, r.result_date""",
         "display": "line",
         "viz": {"graph.dimensions": ["date", "experiment_slug"], "graph.metrics": ["value"]},
     },
     {
         "name": "Latest lift summary",
-        "sql": """WITH latest AS (
+        "sql": f"""WITH latest AS (
   SELECT r.experiment_id, r.metric, r.value, r.interval_lower, r.interval_upper, r.result_date,
          ROW_NUMBER() OVER (PARTITION BY r.experiment_id, r.metric ORDER BY r.result_date DESC) AS rn
   FROM public.experiment_results r
@@ -297,28 +317,29 @@ ORDER BY e.experiment_slug, r.result_date""",
 SELECT e.experiment_slug, e.experiment_type, l.metric, l.value, l.interval_lower, l.interval_upper, l.result_date
 FROM latest l
 JOIN public.experiments e ON e.id = l.experiment_id
-WHERE l.rn = 1
+WHERE l.rn = 1 AND e.{_CF}
 ORDER BY e.experiment_slug""",
         "display": "table",
         "viz": {},
     },
 ]
 
-# Dashboard 2: Channel Performance (from MVP spec)
+# Dashboard 2: Channel Performance
 CHANNEL_PERFORMANCE_QUESTIONS = [
     {
         "name": "Spend by channel over time",
-        "sql": "SELECT report_date AS date, channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily GROUP BY report_date, channel ORDER BY report_date, channel",
+        "sql": f"SELECT report_date AS date, channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily WHERE {_CF} GROUP BY report_date, channel ORDER BY report_date, channel",
         "display": "line",
         "viz": {"graph.dimensions": ["date", "channel"], "graph.metrics": ["spend"]},
     },
     {
         "name": "ROAS by channel",
-        "sql": """SELECT s.channel,
+        "sql": f"""SELECT s.channel,
   COALESCE(SUM(s.spend), 0) AS spend,
-  (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily) AS revenue,
-  CASE WHEN SUM(s.spend) = 0 THEN 0 ELSE (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily) / NULLIF(SUM(s.spend), 0) END AS roas
+  (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily WHERE {_CF}) AS revenue,
+  CASE WHEN SUM(s.spend) = 0 THEN 0 ELSE (SELECT COALESCE(SUM(revenue), 0) FROM public_marts.fact_kpi_daily WHERE {_CF}) / NULLIF(SUM(s.spend), 0) END AS roas
 FROM public_marts.fact_spend_daily s
+WHERE s.{_CF}
 GROUP BY s.channel
 ORDER BY spend DESC""",
         "display": "table",
@@ -326,13 +347,13 @@ ORDER BY spend DESC""",
     },
     {
         "name": "Impressions and clicks by channel",
-        "sql": "SELECT report_date AS date, channel, SUM(impressions) AS impressions, SUM(clicks) AS clicks FROM public_marts.fact_spend_daily GROUP BY report_date, channel ORDER BY report_date, channel",
+        "sql": f"SELECT report_date AS date, channel, SUM(impressions) AS impressions, SUM(clicks) AS clicks FROM public_marts.fact_spend_daily WHERE {_CF} GROUP BY report_date, channel ORDER BY report_date, channel",
         "display": "line",
         "viz": {"graph.dimensions": ["date", "channel"], "graph.metrics": ["impressions", "clicks"]},
     },
     {
         "name": "Spend share by channel",
-        "sql": "SELECT channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily GROUP BY channel ORDER BY spend DESC",
+        "sql": f"SELECT channel, COALESCE(SUM(spend), 0) AS spend FROM public_marts.fact_spend_daily WHERE {_CF} GROUP BY channel ORDER BY spend DESC",
         "display": "pie",
         "viz": {"pie.dimension": "channel", "pie.metric": "spend"},
     },

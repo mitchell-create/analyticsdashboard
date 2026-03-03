@@ -29,8 +29,13 @@ def _get_supabase():
     return create_client(url, key)
 
 
+def _client_slug() -> str:
+    return os.environ.get("CLIENT_SLUG", "default")
+
+
 def _insert_quality_flag(client, check_name: str, severity: str, message: str) -> None:
     client.table("data_quality_flags").insert({
+        "client_slug": _client_slug(),
         "flag_date": date.today().isoformat(),
         "check_name": check_name,
         "severity": severity,

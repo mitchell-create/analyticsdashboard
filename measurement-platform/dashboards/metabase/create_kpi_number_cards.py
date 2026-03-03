@@ -77,8 +77,8 @@ comp AS (
 )"""
 
 # WHERE helpers (reference the CTEs above)
-_W_CURR = "report_date >= (SELECT s FROM params) AND report_date <= (SELECT e FROM params)"
-_W_COMP = "report_date >= (SELECT cs FROM comp) AND report_date <= (SELECT ce FROM comp)"
+_W_CURR = "client_slug = {{client_slug}} AND report_date >= (SELECT s FROM params) AND report_date <= (SELECT e FROM params)"
+_W_COMP = "client_slug = {{client_slug}} AND report_date >= (SELECT cs FROM comp) AND report_date <= (SELECT ce FROM comp)"
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +232,13 @@ def build_template_tags() -> dict:
             "display-name": "Compare to",
             "type": "text",
             "default": "previous_period",
+        },
+        "client_slug": {
+            "id": str(uuid.uuid4()).replace("-", "")[:8],
+            "name": "client_slug",
+            "display-name": "Client",
+            "type": "text",
+            "default": "default",
         },
     }
 

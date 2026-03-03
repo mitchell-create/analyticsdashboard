@@ -14,6 +14,7 @@ with source as (
 
 daily as (
   select
+    '{{ var("client_slug") }}' as client_slug,
     (created_at::date) as report_date,
     count(*) as orders,
     coalesce(sum(total_price::numeric(14, 2)), 0) as revenue

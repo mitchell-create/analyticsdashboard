@@ -7,6 +7,7 @@
 }}
 
 select
+  client_slug,
   report_date,
   coalesce(views, 0) as views,
   likes,

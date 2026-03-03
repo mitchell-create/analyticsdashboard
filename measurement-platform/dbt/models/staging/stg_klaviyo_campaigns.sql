@@ -14,6 +14,7 @@ with source as (
 
 renamed as (
   select
+    '{{ var("client_slug") }}' as client_slug,
     (attributes->>'send_time')::timestamptz::date as report_date,
     id::text as campaign_id,
     0 as sent,

@@ -104,6 +104,7 @@ def record_pipeline_run(status: str, flow_name: str, message: str = "") -> None:
             return
         client = create_client(url, key)
         client.table("pipeline_runs").insert({
+            "client_slug": os.environ.get("CLIENT_SLUG", "default"),
             "run_date": date.today().isoformat(),
             "flow_name": flow_name,
             "status": status,

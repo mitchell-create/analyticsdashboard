@@ -26,7 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def generate_env_file(client_slug: str, args: argparse.Namespace) -> Path:
-    """Generate .env.{client_slug} from .env.example with provided values."""
+    """Generate .env.{client_slug} from .env.example with provided values.
+
+    Shared-DB model: all clients use the SAME Supabase project.
+    The env file includes CLIENT_SLUG so each service knows which client's data to use.
+    """
     template = REPO_ROOT / ".env.example"
     out = REPO_ROOT / f".env.{client_slug}"
 
@@ -36,7 +40,7 @@ def generate_env_file(client_slug: str, args: argparse.Namespace) -> Path:
 
     content = template.read_text() if template.exists() else ""
 
-    replacements = {}
+    replacements: dict[str, str] = {}
     if args.supabase_url:
         replacements["SUPABASE_URL="] = f"SUPABASE_URL={args.supabase_url}"
     if args.supabase_key:
@@ -53,7 +57,7 @@ def generate_env_file(client_slug: str, args: argparse.Namespace) -> Path:
         replacements["SLACK_ALERT_CHANNEL_ID="] = f"SLACK_ALERT_CHANNEL_ID={args.slack_channel_id}"
 
     lines = content.splitlines()
-    new_lines = []
+    new_lines = [f"# Client: {client_slug} (shared-DB multi-tenant)", f"CLIENT_SLUG={client_slug}"]
     for line in lines:
         replaced = False
         for prefix, replacement in replacements.items():
@@ -65,12 +69,42 @@ def generate_env_file(client_slug: str, args: argparse.Namespace) -> Path:
             new_lines.append(line)
 
     out.write_text("\n".join(new_lines) + "\n")
-    print(f"  Generated {out.name}")
+    print(f"  Generated {out.name} (CLIENT_SLUG={client_slug})")
     return out
 
 
+def register_client(client_slug: str, args: argparse.Namespace) -> None:
+    """Register client in client_config table (shared DB)."""
+    db_url = args.supabase_db_url
+    if not db_url:
+        print(f"  No --supabase-db-url — register client manually:")
+        print(f"    INSERT INTO client_config (client_slug) VALUES ('{client_slug}') ON CONFLICT DO NOTHING;")
+        return
+
+    psql = shutil.which("psql")
+    if not psql:
+        print(f"  psql not on PATH — register client manually in SQL Editor:")
+        print(f"    INSERT INTO client_config (client_slug) VALUES ('{client_slug}') ON CONFLICT DO NOTHING;")
+        return
+
+    sql = f"INSERT INTO client_config (client_slug) VALUES ('{client_slug}') ON CONFLICT (client_slug) DO NOTHING;"
+    result = subprocess.run(
+        [psql, db_url, "-c", sql],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0:
+        print(f"  Registered client '{client_slug}' in client_config")
+    else:
+        print(f"  WARNING: {result.stderr[:200]}")
+
+
 def run_schema_migrations(args: argparse.Namespace) -> None:
-    """Run warehouse schema SQL files via psql if a DB URL is available."""
+    """Run warehouse schema SQL files via psql if a DB URL is available.
+
+    For the first client this creates all tables. For subsequent clients,
+    the migrations are idempotent (IF NOT EXISTS / IF NOT) and only
+    065_multi_tenant.sql needs to run once to add client_slug columns.
+    """
     schema_dir = REPO_ROOT / "warehouse" / "schema"
     if not schema_dir.exists():
         print("  warehouse/schema/ not found — skipping")
@@ -165,43 +199,41 @@ def print_remaining_steps(client_slug: str) -> None:
     print(f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Remaining manual steps for '{client_slug}'
+  Architecture: shared-DB (all clients in one Supabase)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  AIRBYTE (data ingestion)
-    1. Create Airbyte workspace for {client_slug}
+  AIRBYTE (data ingestion — writes to raw_{client_slug} schema)
+    1. Create Airbyte connections for {client_slug}
     2. Add sources: Meta Ads, Google Ads, TikTok Ads, Shopify, Klaviyo
-    3. Set destination: this client's Supabase (connection string)
+    3. Set destination: shared Supabase, namespace = raw_{client_slug}
     4. Schedule daily sync; backfill 90 days
     See: ops/client-provision/INGESTION.md
 
-  DBT (after Airbyte sync completes)
-    1. Source .env.{client_slug} (or set SUPABASE_DB_* env vars)
-    2. cd dbt && dbt deps && dbt seed && dbt run && dbt test
+  DBT (run with client_slug var)
+    cd dbt
+    dbt deps
+    dbt run --vars '{{client_slug: {client_slug}, raw_schema: raw_{client_slug}}}'
+    dbt test --vars '{{client_slug: {client_slug}, raw_schema: raw_{client_slug}}}'
 
-  SLACK BOT (one bot per client)
+  SLACK BOT (one bot per client — same shared DB)
     1. Create Slack channel: #measurement-{client_slug}
-    2. Copy services/slack-bot/.env.example → .env.{client_slug}
-    3. Set SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET for this client's Slack app
-    4. Set SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_DB_URL for this client
-    5. Deploy: cd services/slack-bot && npm install && npm run build
-    6. Start: node dist/index.js  (use PM2 or systemd for production)
-    Note: Each client gets its OWN bot process with its own .env.
+    2. Copy services/slack-bot/.env.example -> .env.{client_slug}
+    3. Set CLIENT_SLUG={client_slug}
+    4. Set SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET (client's Slack app)
+    5. Set SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_DB_URL (shared DB)
+    6. Set PORT to a unique port (3001, 3002, etc.)
+    7. Deploy: npm install && npm run build && node dist/index.js
 
-  PREFECT (orchestration)
-    1. Set env vars for this client in a dedicated terminal/process
-    2. Deploy:
-       prefect deployment build orchestration/prefect/flows/daily_pipeline.py:daily_pipeline \\
-         --name "{client_slug}-daily" --cron "0 6 * * *"
-       prefect deployment apply daily_pipeline-deployment.yaml
-    3. Start worker: prefect worker start --pool default-pool
+  PREFECT (per-client deployment — same shared DB)
+    Set CLIENT_SLUG={client_slug} plus SUPABASE_* vars, then:
+    CLIENT_SLUG={client_slug} bash orchestration/prefect/deployments/deploy.sh
 
-  METABASE (if dashboards weren't auto-created above)
-    1. Add this client's Supabase as a database in Metabase
-       Name it: measurement-{client_slug}
-    2. Run:
-       python dashboards/metabase/create_mvp_dashboards.py --client {client_slug} --database-name "measurement-{client_slug}"
-       python dashboards/metabase/create_kpi_number_cards.py --client {client_slug} --database-name "measurement-{client_slug}"
-    3. Wire date filters to all cards (see KPI_NUMBER_CARDS_SETUP.md)
+  METABASE (dashboards use client_slug filter)
+    Dashboards filter by {{{{client_slug}}}} — wire the "Client" filter
+    to '{client_slug}' for this client's dashboard.
+    If dashboards weren't auto-created above:
+      python dashboards/metabase/create_mvp_dashboards.py --client {client_slug}
+      python dashboards/metabase/create_kpi_number_cards.py --client {client_slug}
 
   Use ops/client-provision/onboarding_checklist.md to track progress.
 """)
@@ -236,21 +268,25 @@ def main() -> int:
 
     print(f"\n{'='*60}")
     print(f"  Provisioning client: {slug}")
+    print(f"  Architecture: shared-DB (one Supabase for all clients)")
     print(f"{'='*60}\n")
 
-    print("[1/5] Generating .env file...")
+    print("[1/6] Generating .env file...")
     generate_env_file(slug, args)
 
-    print("\n[2/5] Running schema migrations...")
+    print("\n[2/6] Running schema migrations (idempotent)...")
     run_schema_migrations(args)
 
-    print("\n[3/5] Setting up dbt profile...")
+    print("\n[3/6] Registering client in client_config...")
+    register_client(slug, args)
+
+    print("\n[4/6] Setting up dbt profile...")
     create_dbt_profile(slug, args)
 
-    print("\n[4/5] Creating Metabase dashboards...")
+    print("\n[5/6] Creating Metabase dashboards...")
     create_dashboards(slug, args)
 
-    print("\n[5/5] Remaining manual steps...")
+    print("\n[6/6] Remaining manual steps...")
     print_remaining_steps(slug)
 
     return 0

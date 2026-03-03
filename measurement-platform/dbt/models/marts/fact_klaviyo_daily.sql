@@ -7,6 +7,7 @@
 }}
 
 select
+  client_slug,
   report_date,
   campaign_id,
   coalesce(sent, 0) as sent,

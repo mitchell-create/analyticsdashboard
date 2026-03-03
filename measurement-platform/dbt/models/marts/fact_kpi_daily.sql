@@ -7,6 +7,7 @@
 }}
 
 select
+  client_slug,
   report_date,
   coalesce(revenue, 0) as revenue,
   coalesce(orders, 0) as orders

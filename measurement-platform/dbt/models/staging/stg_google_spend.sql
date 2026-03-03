@@ -14,6 +14,7 @@ with source as (
 
 renamed as (
   select
+    '{{ var("client_slug") }}' as client_slug,
     date_trunc('day', (segments_date::date))::date as report_date,
     'google' as channel,
     coalesce(metrics_cost_micros::numeric(14, 2) / 1e6, 0) as spend,
