@@ -1,0 +1,19 @@
+FROM eclipse-temurin:21-jre
+
+ARG METABASE_VERSION=v0.56.7
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -L "https://downloads.metabase.com/${METABASE_VERSION}/metabase.jar" -o /app/metabase.jar
+
+COPY railway/start_metabase.sh /app/railway/start_metabase.sh
+RUN chmod +x /app/railway/start_metabase.sh
+
+EXPOSE 3000
+
+CMD ["/app/railway/start_metabase.sh"]

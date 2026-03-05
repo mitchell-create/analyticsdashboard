@@ -11,7 +11,6 @@ from pathlib import Path
 from prefect import flow, task
 from prefect.logging import get_run_logger
 from prefect.tasks import task_input_hash
-from prefect.blocks.system import Secret
 
 # Optional: use Prefect Slack block or env SLACK_BOT_TOKEN + SLACK_ALERT_CHANNEL_ID for alerts
 def _post_slack_alert(message: str) -> None:
@@ -44,6 +43,19 @@ def _repo_dbt_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "dbt"
 
 
+def _dbt_cmd(base_cmd: str) -> list[str]:
+    """
+    Build dbt command with optional client_slug vars.
+
+    CLIENT_SLUG enables tenant-specific dbt model selection in shared-DB setups.
+    """
+    cmd = ["dbt", base_cmd]
+    client_slug = os.environ.get("CLIENT_SLUG", "").strip()
+    if client_slug:
+        cmd.extend(["--vars", f"{{client_slug: {client_slug}}}"])
+    return cmd
+
+
 @task
 def run_dbt() -> tuple[bool, str | None]:
     """Run dbt run (staging + marts). Returns (success, error_message)."""
@@ -53,8 +65,10 @@ def run_dbt() -> tuple[bool, str | None]:
         logger.warning(f"dbt project not found at {dbt_dir}; skipping dbt run")
         return True, None
     try:
+        command = _dbt_cmd("run")
+        logger.info(f"Running command: {' '.join(command)}")
         result = subprocess.run(
-            ["dbt", "run"],
+            command,
             cwd=dbt_dir,
             capture_output=True,
             text=True,
@@ -75,11 +89,14 @@ def run_dbt() -> tuple[bool, str | None]:
 @task
 def run_dbt_test() -> bool:
     """Run dbt test."""
+    logger = get_run_logger()
     dbt_dir = os.environ.get("DBT_PROJECT_DIR", str(_repo_dbt_dir()))
     if not Path(dbt_dir).joinpath("dbt_project.yml").exists():
         return True
+    command = _dbt_cmd("test")
+    logger.info(f"Running command: {' '.join(command)}")
     result = subprocess.run(
-        ["dbt", "test"],
+        command,
         cwd=dbt_dir,
         capture_output=True,
         text=True,

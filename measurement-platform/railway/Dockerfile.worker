@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies first for better layer caching.
+COPY orchestration/prefect/requirements.txt /app/orchestration/prefect/requirements.txt
+RUN python -m pip install --upgrade pip && \
+    python -m pip install -r /app/orchestration/prefect/requirements.txt
+
+# Copy only the code required by flow + dbt.
+COPY orchestration /app/orchestration
+COPY dbt /app/dbt
+COPY prefect.yaml /app/prefect.yaml
+COPY railway/start_worker.sh /app/railway/start_worker.sh
+
+RUN chmod +x /app/railway/start_worker.sh
+
+ENV DBT_PROJECT_DIR=/app/dbt \
+    DBT_PROFILES_DIR=/app/dbt
+
+CMD ["/app/railway/start_worker.sh"]
