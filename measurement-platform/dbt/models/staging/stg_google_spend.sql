@@ -1,5 +1,6 @@
 -- stg_google_spend — Staging for Google Ads daily spend
--- Shared table (all clients); derives client_slug from customer_id via client_ad_accounts seed.
+-- Shared table (all clients); derives client_slug from customer_id extracted
+-- from campaign_resource_name (format: 'customers/CUSTOMER_ID/campaigns/...')
 
 {{
   config(
@@ -27,7 +28,8 @@ renamed as (
     s.metrics_impressions::bigint as impressions,
     s.metrics_clicks::bigint as clicks
   from source s
-  left join account_map m on s.customer_id::text = m.account_id
+  left join account_map m
+    on split_part(s.campaign_resource_name, '/', 2) = m.account_id
 )
 
 select * from renamed

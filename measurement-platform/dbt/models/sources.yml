@@ -1,40 +1,38 @@
 # sources.yml — Raw Airbyte tables
 #
-# Shared platforms (Meta, Google, TikTok): one table for ALL clients.
-#   → Staging models join to client_ad_accounts seed to derive client_slug.
+# Table names match what Airbyte Direct Load actually creates.
+# Some tables have hash suffixes from the Airbyte Postgres v3 connector.
 #
-# Per-client platforms (Shopify, Klaviyo): table name includes client prefix.
-#   → Table identifier uses {{ var('client_slug') }} for dynamic resolution.
-#   → e.g. client_slug=xpand → raw.xpand_orders, raw.xpand_klaviyo_campaigns
-#
-# Run dbt per client:  dbt run --vars '{client_slug: xpand}'
+# Run dbt per client: dbt run --vars '{client_slug: expand}'
 
 version: 2
 
 sources:
   # ------------------------------------------------------------------
-  # Shared: Meta, Google, TikTok (all clients in one table)
+  # Shared: Meta Ads (all clients in one table, hash suffix from Airbyte)
   # ------------------------------------------------------------------
   - name: raw_shared
-    description: Shared raw data from ad platforms (all clients mixed, filter by account ID)
+    description: Shared raw data from ad platforms (all clients mixed)
     schema: raw
     tables:
       - name: ads_insights
-        description: Meta Ads daily insights (no prefix)
+        identifier: rawmeta_adsinsights3f0d9c7e820e3b301ace07c1d804dcce
+        description: Meta Ads daily insights
       - name: ads_insights_region
-        description: Meta Ads insights by US region (no prefix)
+        identifier: rawmeta_adss_regionc500077594d248030ddb964985f0ef12
+        description: Meta Ads insights by US region
       - name: google_campaign
-        description: Google Ads campaign data (google_ is part of stream name)
+        description: Google Ads campaign data
       - name: google_geographic_view
-        description: Google Ads geographic view (google_ is part of stream name)
+        description: Google Ads geographic view
       - name: tiktok_advertisers_reports_daily
-        description: TikTok Ads daily reports (tiktok_ prefix in Airbyte)
+        description: TikTok Ads daily reports
 
   # ------------------------------------------------------------------
   # Per-client: Shopify (prefix = {client_slug}_)
   # ------------------------------------------------------------------
   - name: raw_shopify
-    description: "Per-client Shopify data (table prefix = {{ var('client_slug') }}_)"
+    description: "Per-client Shopify data"
     schema: raw
     tables:
       - name: orders
@@ -46,9 +44,12 @@ sources:
 
   # ------------------------------------------------------------------
   # Per-client: Klaviyo (prefix = {client_slug}_klaviyo_)
+  # Note: Current Klaviyo tables have hashed names from old setup.
+  # These will be fixed when Klaviyo connections are re-created with
+  # correct prefix pattern ({client_slug}_klaviyo_).
   # ------------------------------------------------------------------
   - name: raw_klaviyo
-    description: "Per-client Klaviyo data (table prefix = {{ var('client_slug') }}_klaviyo_)"
+    description: "Per-client Klaviyo data"
     schema: raw
     tables:
       - name: campaigns
