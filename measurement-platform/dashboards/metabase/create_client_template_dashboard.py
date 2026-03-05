@@ -205,21 +205,26 @@ WITH params AS (
   SELECT
     {_P1} AS start_date,
     {_P2} AS end_date,
-    COALESCE(NULLIF(LOWER({{compare_mode}}), ''), 'previous_period') AS compare_mode
+    COALESCE(NULLIF(REPLACE(REPLACE(LOWER({{compare_mode}}), ' ', '_'), '-', '_'), ''), 'previous_period') AS raw_compare_mode
 ),
 ranges AS (
   SELECT
     start_date,
     end_date,
-    compare_mode,
     CASE
-      WHEN compare_mode = 'last_year'
+      WHEN raw_compare_mode IN ('last_year', 'previous_year', 'yoy', 'year_over_year')
+        THEN 'last_year'
+      ELSE
+        'previous_period'
+    END AS compare_mode,
+    CASE
+      WHEN raw_compare_mode IN ('last_year', 'previous_year', 'yoy', 'year_over_year')
         THEN (start_date - INTERVAL '1 year')::date
       ELSE
         (start_date - ((end_date - start_date + 1) * INTERVAL '1 day'))::date
     END AS compare_start_date,
     CASE
-      WHEN compare_mode = 'last_year'
+      WHEN raw_compare_mode IN ('last_year', 'previous_year', 'yoy', 'year_over_year')
         THEN (end_date - INTERVAL '1 year')::date
       ELSE
         (start_date - INTERVAL '1 day')::date
