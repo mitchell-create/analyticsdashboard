@@ -1,0 +1,18 @@
+FROM prefecthq/prefect:3-python3.12
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install asyncpg so Prefect can use Postgres for API metadata.
+RUN python -m pip install --no-cache-dir "asyncpg>=0.29.0"
+
+COPY railway/start_prefect_server.sh /app/railway/start_prefect_server.sh
+RUN chmod +x /app/railway/start_prefect_server.sh
+
+EXPOSE 4200
+
+CMD ["/app/railway/start_prefect_server.sh"]

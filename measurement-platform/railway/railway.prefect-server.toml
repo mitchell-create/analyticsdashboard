@@ -1,0 +1,12 @@
+[build]
+dockerfilePath = "railway/Dockerfile.prefect-server"
+watchPatterns = [
+  "railway/Dockerfile.prefect-server",
+  "railway/start_prefect_server.sh",
+]
+
+[deploy]
+startCommand = "/app/railway/start_prefect_server.sh"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"
