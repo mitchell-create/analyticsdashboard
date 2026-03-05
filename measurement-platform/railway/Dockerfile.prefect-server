@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install asyncpg so Prefect can use Postgres for API metadata.
-RUN python -m pip install --no-cache-dir "asyncpg>=0.29.0"
+# Install DB drivers used by Prefect server for Postgres-backed API metadata.
+RUN python -m pip install --no-cache-dir "asyncpg>=0.29.0" "psycopg2-binary>=2.9.9"
 
 COPY railway/start_prefect_server.sh /app/railway/start_prefect_server.sh
 RUN chmod +x /app/railway/start_prefect_server.sh
