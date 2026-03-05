@@ -20,7 +20,7 @@ daily as (
     coalesce(sum(total_price::numeric(14, 2)), 0) as revenue
   from source
   where financial_status in ('paid', 'partially_paid')
-  group by 1
+  group by 1, 2
 )
 
 select * from daily
