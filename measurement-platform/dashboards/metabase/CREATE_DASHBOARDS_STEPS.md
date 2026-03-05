@@ -72,6 +72,7 @@ C:\Users\ReadyPlayerOne\AppData\Local\Programs\Python\Python312\python.exe creat
 ```
 
 See `CLIENT_TEMPLATE_DASHBOARD_SETUP.md` for details.
+The template includes a compare-mode control (`previous_period` / `last_year`) via `compare_mode`.
 
 ---
 

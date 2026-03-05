@@ -71,6 +71,13 @@ def build_template_tags() -> dict[str, dict[str, str]]:
             "display-name": "End date",
             "type": "date",
         },
+        "compare_mode": {
+            "id": str(uuid.uuid4()).replace("-", "")[:8],
+            "name": "compare_mode",
+            "display-name": "Compare mode",
+            "type": "text",
+            "default": "previous_period",
+        },
     }
 
 
@@ -190,6 +197,111 @@ def build_customer_cards() -> list[CardDef]:
         CardDef("Customer Metrics | Avg Revenue Per Customer (proxy: AOV)", blended_daily_sql("ROUND((COALESCE(k.revenue, 0) / NULLIF(COALESCE(k.orders, 0), 0))::numeric, 2)"), "trend", trend_viz),
         CardDef("Customer Metrics | Avg Revenue Per New Customer (pending model)", placeholder_daily_sql(), "trend", trend_viz),
     ]
+
+
+def build_comparison_cards() -> list[CardDef]:
+    comparison_sql = f"""
+WITH params AS (
+  SELECT
+    {_P1} AS start_date,
+    {_P2} AS end_date,
+    COALESCE(NULLIF(LOWER({{compare_mode}}), ''), 'previous_period') AS compare_mode
+),
+ranges AS (
+  SELECT
+    start_date,
+    end_date,
+    compare_mode,
+    CASE
+      WHEN compare_mode = 'last_year'
+        THEN (start_date - INTERVAL '1 year')::date
+      ELSE
+        (start_date - ((end_date - start_date + 1) * INTERVAL '1 day'))::date
+    END AS compare_start_date,
+    CASE
+      WHEN compare_mode = 'last_year'
+        THEN (end_date - INTERVAL '1 year')::date
+      ELSE
+        (start_date - INTERVAL '1 day')::date
+    END AS compare_end_date
+  FROM params
+),
+kpi AS (
+  SELECT
+    SUM(CASE WHEN k.report_date BETWEEN r.start_date AND r.end_date THEN k.revenue ELSE 0 END) AS cur_revenue,
+    SUM(CASE WHEN k.report_date BETWEEN r.compare_start_date AND r.compare_end_date THEN k.revenue ELSE 0 END) AS prior_revenue,
+    SUM(CASE WHEN k.report_date BETWEEN r.start_date AND r.end_date THEN k.orders ELSE 0 END) AS cur_orders,
+    SUM(CASE WHEN k.report_date BETWEEN r.compare_start_date AND r.compare_end_date THEN k.orders ELSE 0 END) AS prior_orders
+  FROM {MARTS_SCHEMA}.fact_kpi_daily k
+  CROSS JOIN ranges r
+  WHERE k.report_date BETWEEN LEAST(r.start_date, r.compare_start_date) AND GREATEST(r.end_date, r.compare_end_date)
+),
+spend AS (
+  SELECT
+    SUM(CASE WHEN s.report_date BETWEEN r.start_date AND r.end_date THEN s.spend ELSE 0 END) AS cur_spend,
+    SUM(CASE WHEN s.report_date BETWEEN r.compare_start_date AND r.compare_end_date THEN s.spend ELSE 0 END) AS prior_spend,
+    SUM(CASE WHEN s.report_date BETWEEN r.start_date AND r.end_date THEN s.impressions ELSE 0 END) AS cur_impressions,
+    SUM(CASE WHEN s.report_date BETWEEN r.compare_start_date AND r.compare_end_date THEN s.impressions ELSE 0 END) AS prior_impressions,
+    SUM(CASE WHEN s.report_date BETWEEN r.start_date AND r.end_date THEN s.clicks ELSE 0 END) AS cur_clicks,
+    SUM(CASE WHEN s.report_date BETWEEN r.compare_start_date AND r.compare_end_date THEN s.clicks ELSE 0 END) AS prior_clicks
+  FROM {MARTS_SCHEMA}.fact_spend_daily s
+  CROSS JOIN ranges r
+  WHERE s.report_date BETWEEN LEAST(r.start_date, r.compare_start_date) AND GREATEST(r.end_date, r.compare_end_date)
+),
+ranges_out AS (
+  SELECT
+    compare_mode,
+    start_date,
+    end_date,
+    compare_start_date,
+    compare_end_date
+  FROM ranges
+)
+SELECT
+  'Spend'::text AS metric,
+  ROUND(COALESCE(s.cur_spend, 0)::numeric, 2) AS current_value,
+  ROUND(COALESCE(s.prior_spend, 0)::numeric, 2) AS comparison_value,
+  CASE WHEN COALESCE(s.prior_spend, 0) = 0 THEN 0
+       ELSE ROUND(((s.cur_spend - s.prior_spend) / s.prior_spend * 100)::numeric, 1) END AS pct_change,
+  r.compare_mode,
+  r.start_date,
+  r.end_date,
+  r.compare_start_date,
+  r.compare_end_date
+FROM spend s CROSS JOIN ranges_out r
+UNION ALL
+SELECT
+  'Revenue',
+  ROUND(COALESCE(k.cur_revenue, 0)::numeric, 2),
+  ROUND(COALESCE(k.prior_revenue, 0)::numeric, 2),
+  CASE WHEN COALESCE(k.prior_revenue, 0) = 0 THEN 0
+       ELSE ROUND(((k.cur_revenue - k.prior_revenue) / k.prior_revenue * 100)::numeric, 1) END,
+  r.compare_mode, r.start_date, r.end_date, r.compare_start_date, r.compare_end_date
+FROM kpi k CROSS JOIN ranges_out r
+UNION ALL
+SELECT
+  'Orders',
+  ROUND(COALESCE(k.cur_orders, 0)::numeric, 2),
+  ROUND(COALESCE(k.prior_orders, 0)::numeric, 2),
+  CASE WHEN COALESCE(k.prior_orders, 0) = 0 THEN 0
+       ELSE ROUND(((k.cur_orders - k.prior_orders) / k.prior_orders * 100)::numeric, 1) END,
+  r.compare_mode, r.start_date, r.end_date, r.compare_start_date, r.compare_end_date
+FROM kpi k CROSS JOIN ranges_out r
+UNION ALL
+SELECT
+  'ROAS',
+  ROUND((CASE WHEN COALESCE(s.cur_spend, 0) = 0 THEN 0 ELSE k.cur_revenue / NULLIF(s.cur_spend, 0) END)::numeric, 3),
+  ROUND((CASE WHEN COALESCE(s.prior_spend, 0) = 0 THEN 0 ELSE k.prior_revenue / NULLIF(s.prior_spend, 0) END)::numeric, 3),
+  CASE
+    WHEN COALESCE(s.prior_spend, 0) = 0 OR COALESCE(k.prior_revenue, 0) = 0 THEN 0
+    ELSE ROUND((((k.cur_revenue / NULLIF(s.cur_spend, 0)) - (k.prior_revenue / NULLIF(s.prior_spend, 0)))
+         / NULLIF((k.prior_revenue / NULLIF(s.prior_spend, 0)), 0) * 100)::numeric, 1)
+  END,
+  r.compare_mode, r.start_date, r.end_date, r.compare_start_date, r.compare_end_date
+FROM kpi k CROSS JOIN spend s CROSS JOIN ranges_out r
+ORDER BY metric
+"""
+    return [CardDef("Executive Comparison | Current vs Comparison", comparison_sql, "table", {})]
 
 
 def build_correlation_cards() -> list[CardDef]:
@@ -420,6 +532,7 @@ def build_dashboard_sections() -> list[dict[str, Any]]:
     return [
         {"name": "Executive / Blended Summary", "cards": build_executive_cards(), "size_x": 2, "size_y": 3},
         {"name": "Customer Metrics", "cards": build_customer_cards(), "size_x": 2, "size_y": 3},
+        {"name": "Executive Comparison", "cards": build_comparison_cards(), "size_x": 12, "size_y": 4},
         {"name": "Correlation Charts", "cards": build_correlation_cards(), "size_x": 12, "size_y": 4},
         {"name": "Funnel", "cards": build_funnel_cards(), "size_x": 12, "size_y": 4},
         {"name": "Platform Breakdown | Meta", "cards": platform_metric_cards("meta", "Meta"), "size_x": 2, "size_y": 3},
@@ -538,6 +651,7 @@ def main() -> int:
     print("Add dashboard filters in Metabase UI:")
     print("  - Start date (map to report_date_start)")
     print("  - End date (map to report_date_end)")
+    print("  - Compare mode (map to compare_mode; use values: previous_period or last_year)")
     print("  - Optional channel filter for section-specific cards")
     print("Cards marked '(pending model)' are placeholders for metrics that require additional marts.")
     return 0

@@ -62,7 +62,13 @@ After creation, open the dashboard in edit mode and add:
 
 - `Start date` (Date; map to `report_date_start`)
 - `End date` (Date; map to `report_date_end`)
+- `Compare mode` (Category/Text; map to `compare_mode`; values: `previous_period`, `last_year`)
 - Optional channel filter for channel-level cards
+
+### Compare mode behavior
+
+- `previous_period`: compares selected date range vs immediately preceding range of equal length
+- `last_year`: compares selected date range vs same calendar range last year
 
 ## Notes on metric readiness
 
