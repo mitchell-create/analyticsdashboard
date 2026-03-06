@@ -11,6 +11,7 @@ measurement_platform:
       user: "{{ env_var('SUPABASE_DB_USER', 'postgres.xopsomagbnsnadxxhzhx') }}"
       password: "{{ env_var('SUPABASE_DB_PASSWORD', '') }}"
       dbname: postgres
+      sslmode: require
       schema: public
       threads: 4
       keepalives_idle: 0
@@ -22,6 +23,7 @@ measurement_platform:
       user: "{{ env_var('SUPABASE_DB_USER', 'postgres.xopsomagbnsnadxxhzhx') }}"
       password: "{{ env_var('SUPABASE_DB_PASSWORD', '') }}"
       dbname: postgres
+      sslmode: require
       schema: public
       threads: 4
       keepalives_idle: 0
