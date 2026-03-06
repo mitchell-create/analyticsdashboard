@@ -1,0 +1,12 @@
+[build]
+dockerfilePath = "railway/Dockerfile.metabase"
+watchPatterns = [
+  "railway/Dockerfile.metabase",
+  "railway/start_metabase.sh",
+]
+
+[deploy]
+startCommand = "/app/railway/start_metabase.sh"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"

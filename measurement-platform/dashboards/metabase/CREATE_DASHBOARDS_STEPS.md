@@ -65,6 +65,15 @@ Run:
 C:\Users\ReadyPlayerOne\AppData\Local\Programs\Python\Python312\python.exe create_mvp_dashboards.py
 ```
 
+For the full client template dashboard (single dashboard with executive, customer, funnel, platform, and GeoLift sections), run:
+
+```powershell
+C:\Users\ReadyPlayerOne\AppData\Local\Programs\Python\Python312\python.exe create_client_template_dashboard.py
+```
+
+See `CLIENT_TEMPLATE_DASHBOARD_SETUP.md` for details.
+The template includes a compare-mode control (`previous_period` / `last_year`) via `compare_mode`.
+
 ---
 
 ## Step 6: Check the output

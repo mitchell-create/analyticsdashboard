@@ -8,18 +8,28 @@ deployments:
   - name: daily
     entrypoint: orchestration/prefect/flows/daily_pipeline.py:daily_pipeline
     description: Daily dbt run + dbt test after Airbyte
-    schedule:
-      cron: "0 6 * * *"
-      timezone: "America/New_York"
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "America/New_York"
+        active: true
     work_pool:
       name: default-agent-pool
+    pull:
+      - prefect.deployments.steps.set_working_directory:
+          directory: /app
     parameters: {}
     # Pass env vars to flow runs (dbt needs Path to find dbt CLI)
     job_variables:
       env:
         SUPABASE_URL: "{{ $SUPABASE_URL }}"
         SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
+        SUPABASE_DB_HOST: "{{ $SUPABASE_DB_HOST }}"
+        SUPABASE_DB_USER: "{{ $SUPABASE_DB_USER }}"
+        SUPABASE_DB_PASSWORD: "{{ $SUPABASE_DB_PASSWORD }}"
+        SUPABASE_DB_PORT: "{{ $SUPABASE_DB_PORT }}"
         DBT_PROJECT_DIR: "{{ $DBT_PROJECT_DIR }}"
-        Path: "{{ $Path }}"
+        DBT_PROFILES_DIR: "{{ $DBT_PROFILES_DIR }}"
+        CLIENT_SLUG: "{{ $CLIENT_SLUG }}"
+        PATH: "{{ $PATH }}"
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
         SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"

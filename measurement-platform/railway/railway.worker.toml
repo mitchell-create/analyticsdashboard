@@ -1,0 +1,14 @@
+[build]
+dockerfilePath = "railway/Dockerfile.worker"
+watchPatterns = [
+  "orchestration/**",
+  "dbt/**",
+  "prefect.yaml",
+  "railway/Dockerfile.worker",
+  "railway/start_worker.sh",
+]
+
+[deploy]
+startCommand = "/app/railway/start_worker.sh"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
