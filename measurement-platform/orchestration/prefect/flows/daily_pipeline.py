@@ -145,20 +145,20 @@ def daily_pipeline() -> None:
     if not ok:
         record_pipeline_run.submit("failed", flow_name, "Airbyte sync check failed").result()
         _post_slack_alert(f":x: *Daily pipeline failed*\nDate: {run_date}\nStep: Airbyte sync check failed")
-        return
+        raise RuntimeError("Airbyte sync check failed")
 
     ok, dbt_err = run_dbt.submit().result()
     if not ok:
         msg = f"dbt run failed: {dbt_err}" if dbt_err else "dbt run failed"
         record_pipeline_run.submit("failed", flow_name, msg).result()
         _post_slack_alert(f":x: *Daily pipeline failed*\nDate: {run_date}\nStep: {msg}")
-        return
+        raise RuntimeError(msg)
 
     ok = run_dbt_test.submit().result()
     if not ok:
         record_pipeline_run.submit("failed", flow_name, "dbt test failed").result()
         _post_slack_alert(f":x: *Daily pipeline failed*\nDate: {run_date}\nStep: dbt test failed")
-        return
+        raise RuntimeError("dbt test failed")
 
     # QA checks: run qa_checks flow if deployed, or schedule separately
     # prefect deployment run qa_checks/qa_checks
