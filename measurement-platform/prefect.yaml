@@ -8,11 +8,15 @@ deployments:
   - name: daily
     entrypoint: orchestration/prefect/flows/daily_pipeline.py:daily_pipeline
     description: Daily dbt run + dbt test after Airbyte
-    schedule:
-      cron: "0 6 * * *"
-      timezone: "America/New_York"
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "America/New_York"
+        active: true
     work_pool:
       name: default-agent-pool
+    pull:
+      - prefect.deployments.steps.set_working_directory:
+          directory: /app
     parameters: {}
     # Pass env vars to flow runs (dbt needs Path to find dbt CLI)
     job_variables:
