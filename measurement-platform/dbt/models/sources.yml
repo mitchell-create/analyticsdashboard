@@ -16,10 +16,10 @@ sources:
     schema: raw
     tables:
       - name: ads_insights
-        identifier: rawmeta_adsinsights3f0d9c7e820e3b301ace07c1d804dcce
+        identifier: meta_ads_insights
         description: Meta Ads daily insights
       - name: ads_insights_region
-        identifier: rawmeta_adss_regionc500077594d248030ddb964985f0ef12
+        identifier: meta_ads_insights_region
         description: Meta Ads insights by US region
       - name: google_campaign
         description: Google Ads campaign data
