@@ -14,7 +14,7 @@ with source as (
     coalesce(total_price::numeric(14, 2), 0) as revenue,
     upper(trim(shipping_address->>'province_code')) as province_code
   from {{ source('raw_shopify', 'orders') }}
-  where financial_status in ('paid', 'partially_paid')
+  where financial_status not in ('refunded', 'voided')
     and shipping_address is not null
     and coalesce(shipping_address->>'country_code', '') = 'US'
     and nullif(trim(shipping_address->>'province_code'), '') is not null
