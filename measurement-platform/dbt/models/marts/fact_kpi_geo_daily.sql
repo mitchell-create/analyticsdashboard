@@ -2,8 +2,11 @@
 -- Uses stg_shopify_orders_geo (province_code from shipping_address) joined to dim_geo.
 {{
   config(
-    materialized='table',
-    schema='marts'
+    materialized='incremental',
+    schema='marts',
+    unique_key=['client_slug', 'report_date', 'geo_id'],
+    incremental_strategy='merge',
+    on_schema_change='sync_all_columns'
   )
 }}
 

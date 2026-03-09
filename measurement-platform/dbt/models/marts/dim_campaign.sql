@@ -1,8 +1,11 @@
 -- dim_campaign — Campaign dimension (from Klaviyo + ad campaign metadata)
 {{
   config(
-    materialized='table',
-    schema='marts'
+    materialized='incremental',
+    schema='marts',
+    unique_key=['client_slug', 'campaign_id'],
+    incremental_strategy='merge',
+    on_schema_change='sync_all_columns'
   )
 }}
 

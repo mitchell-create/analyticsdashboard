@@ -1,8 +1,11 @@
 -- fact_spend_daily — Daily spend by channel (union of Meta, Google, TikTok staging)
 {{
   config(
-    materialized='table',
-    schema='marts'
+    materialized='incremental',
+    schema='marts',
+    unique_key=['client_slug', 'report_date', 'channel'],
+    incremental_strategy='merge',
+    on_schema_change='sync_all_columns'
   )
 }}
 
