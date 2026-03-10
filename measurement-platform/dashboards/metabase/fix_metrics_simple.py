@@ -44,20 +44,28 @@ def get_card(headers: dict, card_id: int) -> dict | None:
     return None
 
 
-def update_card_sql_only(headers: dict, card_id: int, new_sql: str) -> bool:
-    """Update only the SQL query, preserving everything else."""
+def update_card_sql_only(headers: dict, card_id: int, new_sql: str, set_scalar: bool = True) -> bool:
+    """Update the SQL query and optionally set display to scalar."""
     card = get_card(headers, card_id)
     if not card:
         print(f"  Card {card_id} not found")
         return False
 
-    # Only update the SQL query, keep everything else the same
+    # Update the SQL query
     dataset_query = card.get("dataset_query", {})
     native = dataset_query.get("native", {})
     native["query"] = new_sql
     # Keep existing template-tags as-is
     dataset_query["native"] = native
     card["dataset_query"] = dataset_query
+
+    # If set_scalar is True and card is currently a chart, change to scalar
+    if set_scalar:
+        current_display = card.get("display", "")
+        if current_display in ["line", "bar", "area", "combo"]:
+            card["display"] = "scalar"
+            # Clear visualization settings that are chart-specific
+            card["visualization_settings"] = {}
 
     # Update the card
     r = requests.put(f"{METABASE_URL}/api/card/{card_id}", json=card, headers=headers, timeout=30)
@@ -120,7 +128,7 @@ FROM public_marts.fact_kpi_daily
 WHERE report_date >= date '2020-01-01'
   AND report_date <= CURRENT_DATE
 """
-            if update_card_sql_only(headers, card_id, new_sql):
+            if update_card_sql_only(headers, card_id, new_sql, set_scalar=True):
                 print(f"  ✓ Updated")
                 updated += 1
 
@@ -145,7 +153,7 @@ FROM public_marts.fact_kpi_daily
 WHERE report_date >= date '2020-01-01'
   AND report_date <= CURRENT_DATE
 """
-            if update_card_sql_only(headers, card_id, new_sql):
+            if update_card_sql_only(headers, card_id, new_sql, set_scalar=True):
                 print(f"  ✓ Updated")
                 updated += 1
 
@@ -170,7 +178,7 @@ FROM public_marts.fact_spend_daily
 WHERE report_date >= date '2020-01-01'
   AND report_date <= CURRENT_DATE
 """
-            if update_card_sql_only(headers, card_id, new_sql):
+            if update_card_sql_only(headers, card_id, new_sql, set_scalar=True):
                 print(f"  ✓ Updated")
                 updated += 1
 
@@ -195,7 +203,7 @@ FROM public_marts.fact_spend_daily
 WHERE report_date >= date '2020-01-01'
   AND report_date <= CURRENT_DATE
 """
-            if update_card_sql_only(headers, card_id, new_sql):
+            if update_card_sql_only(headers, card_id, new_sql, set_scalar=True):
                 print(f"  ✓ Updated")
                 updated += 1
 
@@ -220,7 +228,7 @@ FROM public_marts.fact_spend_daily
 WHERE report_date >= date '2020-01-01'
   AND report_date <= CURRENT_DATE
 """
-            if update_card_sql_only(headers, card_id, new_sql):
+            if update_card_sql_only(headers, card_id, new_sql, set_scalar=True):
                 print(f"  ✓ Updated")
                 updated += 1
 
