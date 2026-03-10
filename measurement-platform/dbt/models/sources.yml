@@ -20,6 +20,10 @@ sources:
         description: TikTok Ads daily reports (Airbyte, stream prefix tiktok_)
       - name: orders
         description: Shopify orders (Airbyte) — schema raw, table orders
+      - name: chubble_orders
+        description: Chubble Shopify orders (Airbyte)
+      - name: expand_orders
+        description: Expand Shopify orders (Airbyte)
       # Klaviyo: Airbyte stream campaigns
       - name: klaviyo_campaigns
         description: Klaviyo campaigns (Airbyte)
