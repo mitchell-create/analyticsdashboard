@@ -67,18 +67,6 @@ def update_card_sql_only(headers: dict, card_id: int, new_sql: str) -> bool:
     return True
 
 
-def extract_date_range(current_sql: str) -> tuple[str, str]:
-    """Extract date range from SQL, return (start_date, end_date) or defaults."""
-    # Look for date literals
-    start_match = re.search(r"report_date\s*>=\s*date\s*['\"]([^'\"]+)['\"]", current_sql, re.IGNORECASE)
-    end_match = re.search(r"report_date\s*<=\s*date\s*['\"]([^'\"]+)['\"]", current_sql, re.IGNORECASE)
-    
-    start_date = start_match.group(1) if start_match else "2020-01-01"
-    end_date = end_match.group(1) if end_match else "CURRENT_DATE"
-    
-    return start_date, end_date
-
-
 def main() -> int:
     dashboard_name = sys.argv[1] if len(sys.argv) > 1 else "Client Performance Template v2"
     
@@ -113,8 +101,7 @@ def main() -> int:
         # Update Orders card - convert to total
         if "Orders" in card_name and "Executive" in card_name:
             print(f"Updating: {card_name}")
-            # Extract client_slug and date range from current query
-            has_client_slug = "client_slug" in current_sql.lower()
+            # Extract client_slug from current query
             client_match = re.search(r"client_slug\s*=\s*['\"]([^'\"]+)['\"]", current_sql, re.IGNORECASE)
             client_value = client_match.group(1) if client_match else None
             
@@ -238,8 +225,8 @@ WHERE report_date >= date '2020-01-01'
                 updated += 1
 
     print(f"\n✓ Updated {updated} metric cards")
-    print(f"\nNote: These queries use hardcoded date ranges. To add date filters,")
-    print("      you'll need to link dashboard filters in Metabase UI.")
+    print(f"\nNote: These queries use hardcoded date ranges (2020-01-01 to today).")
+    print("      To add date filters, link dashboard filters in Metabase UI.")
     return 0
 
 
