@@ -173,12 +173,13 @@ WHERE report_date >= {_P1} AND report_date <= {_P2}
                 print(f"  ✗ Failed: {card_name}")
 
         # Update Total Customers / Total Unique Customers / Customers (proxy)
+        # Use dim_customers for total count (not daily counts from fact_customers_daily)
         elif (("Total Customers" in card_name or "Total Unique Customers" in card_name or "Customers (proxy" in card_name) 
               and "New" not in card_name and "Returning" not in card_name):
             new_sql = f"""
-SELECT COUNT(DISTINCT customer_identifier) AS total_customers
-FROM public_marts.fact_customers_daily
-WHERE report_date >= {_P1} AND report_date <= {_P2}
+SELECT COUNT(*) AS total_customers
+FROM public_marts.dim_customers
+WHERE first_order_date >= {_P1} AND first_order_date <= {_P2}
 """
             if update_card(headers, card_id, new_sql, template_tags):
                 print(f"  ✓ Updated: {card_name}")
