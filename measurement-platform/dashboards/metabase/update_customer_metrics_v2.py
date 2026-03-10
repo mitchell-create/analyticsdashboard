@@ -172,8 +172,9 @@ WHERE report_date >= {_P1} AND report_date <= {_P2}
             else:
                 print(f"  ✗ Failed: {card_name}")
 
-        # Update Total Customers / Total Unique Customers
-        elif ("Total Customers" in card_name or "Total Unique Customers" in card_name) and "New" not in card_name and "Returning" not in card_name:
+        # Update Total Customers / Total Unique Customers / Customers (proxy)
+        elif (("Total Customers" in card_name or "Total Unique Customers" in card_name or "Customers (proxy" in card_name) 
+              and "New" not in card_name and "Returning" not in card_name):
             new_sql = f"""
 SELECT COUNT(DISTINCT customer_identifier) AS total_customers
 FROM public_marts.fact_customers_daily
