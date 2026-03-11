@@ -53,15 +53,18 @@ The bot answers questions like "Spend in Texas last month?" by converting to SQL
    - `app_mention` — bot sees when @mentioned (optional)
 4. Save changes, **reinstall** the app to workspace
 
-### B.3 Create Slash Command (optional but easier)
+### B.3 Create Slash Commands (optional but easier)
 
-1. **Slash Commands** → **Create New Command**
-2. Command: `/analytics`
-3. Request URL: same as Event Subscriptions (e.g. `https://xxx.ngrok.io/slack/commands`)
-4. Short description: "Ask analytics questions"
-5. Save
+1. **Slash Commands** → **Create New Command** (create each):
 
-**Note:** Slash commands use a different endpoint. The Bolt app handles both. For `/analytics`, the Request URL should point to your app. Bolt typically uses one URL for all events — check Bolt docs for your setup.
+   | Command | Short description | Request URL |
+   |---------|-------------------|-------------|
+   | `/analytics` | Ask analytics questions | Same as Event Subscriptions (e.g. `https://xxx.ngrok.io/slack/events`) |
+   | `/geolift` | GeoLift & experiment setup help | Same as above |
+
+2. Save each command.
+
+**Note:** Bolt handles both slash commands and events. Use the same Request URL as Event Subscriptions. For `/analytics`, the Request URL should point to your app. Bolt typically uses one URL for all events — check Bolt docs for your setup.
 
 ### B.4 Get Signing Secret
 
@@ -125,6 +128,17 @@ The bot generates up to 8 SQL queries, runs them, and returns a text summary wit
 - `/analytics compare past 30 days to previous 30 days`
 
 Shows: Current | Prior | % Change for each metric.
+
+### B.9 GeoLift / experiment agent
+
+With `OPENAI_API_KEY` set, you can get GeoLift and experiment setup guidance:
+
+- `/geolift` — General setup and best practices
+- `/geolift how do I choose treatment vs holdout geos?`
+- `/geolift what's the minimum pre-period for a valid test?`
+- In channel: "How do I run a GeoLift test?" or "Geo lift best practices"
+
+The agent uses `gpt-4o` by default (set `OPENAI_AGENT_MODEL` to override) and fetches your current experiments from the DB for context.
 
 ---
 

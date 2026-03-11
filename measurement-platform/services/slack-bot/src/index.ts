@@ -34,6 +34,23 @@ app.message(async ({ message, client, say }) => {
   }
 });
 
+// Slash command for GeoLift / experiment setup assistance
+app.command("/geolift", async ({ command, ack, say }) => {
+  await ack();
+  const prompt = command.text?.trim() || "How do I set up and run a GeoLift test? What are the best practices?";
+  try {
+    const { answerExperimentQuery } = await import("./experiment_agent");
+    const { text: reply } = await answerExperimentQuery(prompt, {
+      userId: command.user_id,
+      channelId: command.channel_id,
+    });
+    await say({ text: reply });
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    await say({ text: `Error: ${err}` });
+  }
+});
+
 // Slash command for explicit Q&A (e.g. /analytics How much did we spend in Texas?)
 app.command("/analytics", async ({ command, ack, say }) => {
   await ack();

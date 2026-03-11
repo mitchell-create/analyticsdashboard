@@ -6,6 +6,10 @@
 import OpenAI from "openai";
 import { isSqlAllowed, extractTablesUsed } from "./guardrails";
 import { runReadOnlyQuery, logQueryAudit } from "./db";
+import { isExperimentRequest, answerExperimentQuery } from "./experiment_agent";
+
+/** Model for SQL/reports. Set OPENAI_MODEL=gpt-4o for better quality. */
+const DEFAULT_SQL_MODEL = "gpt-4o-mini";
 
 const SCHEMA = "public_marts";
 const MAX_REPORT_METRICS = 8;
@@ -157,7 +161,7 @@ Rules:
 - No explanation, just METRIC/SQL pairs.`;
 
     const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || DEFAULT_SQL_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt || "Ecommerce summary for the past month" },
@@ -313,7 +317,7 @@ Rules:
 - Use report_date for date filtering when relevant.`;
 
     const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL || DEFAULT_SQL_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
@@ -357,6 +361,10 @@ export async function answerQuery(
   prompt: string,
   options: { userId?: string; channelId?: string }
 ): Promise<{ text: string; error?: string }> {
+  // Experiment / GeoLift agent: setup, best practices, data context
+  if (isExperimentRequest(prompt)) {
+    return answerExperimentQuery(prompt, options);
+  }
   // Report mode: multi-query summary + tables
   if (isReportRequest(prompt)) {
     return answerReportQuery(prompt, options);

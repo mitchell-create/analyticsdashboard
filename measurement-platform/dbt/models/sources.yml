@@ -24,10 +24,41 @@ sources:
         description: Chubble Shopify orders (Airbyte)
       - name: expand_orders
         description: Expand Shopify orders (Airbyte)
+      - name: orders_babybay
+        description: Babybay WooCommerce orders (Airbyte)
+      - name: orders_crazyrumors
+        description: Crazyrumors Shopify orders (Airbyte)
+      - name: orders_zoka
+        description: Zoka Shopify orders (Airbyte)
+      - name: orders_motive
+        description: Motive Shopify orders (Airbyte)
       # Klaviyo: Airbyte stream campaigns
       - name: klaviyo_campaigns
         description: Klaviyo campaigns (Airbyte)
 
+  # ------------------------------------------------------------------
+  # Per-client: Klaviyo (prefix = {client_slug}_klaviyo_)
+  # Note: Current Klaviyo tables have hashed names from old setup.
+  # These will be fixed when Klaviyo connections are re-created with
+  # correct prefix pattern ({client_slug}_klaviyo_).
+  # ------------------------------------------------------------------
+  - name: raw_klaviyo
+    description: "Per-client Klaviyo data"
+    schema: raw
+    tables:
+      - name: campaigns
+        identifier: "{{ var('client_slug') }}_klaviyo_campaigns"
+        description: Klaviyo campaigns
+      - name: events
+        identifier: "{{ var('client_slug') }}_klaviyo_events"
+        description: Klaviyo events (sends, opens, clicks)
+      - name: campaign_values_reports
+        identifier: "{{ var('client_slug') }}_klaviyo_campaign_values_reports"
+        description: Klaviyo aggregated campaign metrics
+
+  # ------------------------------------------------------------------
+  # Optional: Metricool (TikTok organic — disabled by default)
+  # ------------------------------------------------------------------
   - name: raw_metricool
     description: Raw TikTok organic metrics from Metricool
     schema: "{{ var('raw_schema', 'raw') }}"
