@@ -23,6 +23,12 @@ const ALLOWLISTED_TABLES = new Set([
   "public_marts.fact_tiktok_organic_daily",
   "public_marts.dim_campaign",
   "public_marts.dim_geo",
+  // public schema (experiments)
+  "public.experiments",
+  "public.experiment_results",
+  "public.marketing_events",
+  "public.data_quality_flags",
+  "public.pipeline_runs",
 ]);
 
 const FORBIDDEN_PATTERNS = [
