@@ -1,12 +1,14 @@
 /**
- * index.ts — Slack Bolt app: analytics Q&A, GeoLift experiments, and pipeline alerts.
- * Env: SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_DB_URL.
+ * index.ts — Slack Bolt app: Q&A (NL → SQL → answer), GeoLift experiments, multi-client routing.
+ * Env: SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, CLIENT_REGISTRY_PATH (or legacy SUPABASE_* vars).
  */
 
 import "dotenv/config";
 import { App } from "@slack/bolt";
 import { answerQuery } from "./ai_to_sql";
 import { handleGeoliftCommand, isExperimentQuery, answerExperimentQuery, getNewlyCompletedResults } from "./experiment_agent";
+import { loadClientRegistry, listClientSlugs } from "./client_registry";
+import { resolveClient, setDefaultClient } from "./client_context";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -14,50 +16,52 @@ const app = new App({
   socketMode: false,
 });
 
+/** Build disambiguation message when client can't be resolved. */
+function disambiguationMessage(): string {
+  const slugs = listClientSlugs();
+  return `Which client? I see: *${slugs.join(", ")}*.\nUse \`--client <name> <question>\` or \`/analytics set-default <name>\`.`;
+}
+
 // ─── Channel messages ────────────────────────────────────────────────────────
 
-app.message(async ({ message, client, say }) => {
+app.message(async ({ message, say }) => {
   if (message.subtype) return;
   const text = "text" in message ? (message.text as string) : "";
   if (!text || text.length < 3) return;
 
+  const { client, cleanedText, ambiguous } = resolveClient(
+    text,
+    message.channel,
+    message.user
+  );
+
+  if (ambiguous && !client) {
+    await say({ text: disambiguationMessage(), thread_ts: message.ts });
+    return;
+  }
+
+  const options = {
+    userId: message.user,
+    channelId: message.channel,
+    clientSlug: client?.clientSlug,
+  };
+
   try {
-    // Route to experiment agent if the message is about GeoLift/experiments
-    if (isExperimentQuery(text)) {
-      const reply = await answerExperimentQuery(text, {
-        userId: message.user,
-        channelId: message.channel,
-      });
-      await say({ text: reply, thread_ts: message.ts });
-      return;
+    let reply: string;
+    if (isExperimentQuery(cleanedText)) {
+      reply = await answerExperimentQuery(cleanedText, options);
+    } else {
+      const result = await answerQuery(cleanedText, options);
+      reply = result.text;
     }
 
-    // Default: analytics agent (NL → SQL)
-    const { text: reply } = await answerQuery(text, {
-      userId: message.user,
-      channelId: message.channel,
-    });
-    await say({ text: reply, thread_ts: message.ts });
+    const prefix = client && client.clientSlug !== "default"
+      ? `_[${client.displayName}]_ `
+      : "";
+    await say({ text: prefix + reply, thread_ts: message.ts });
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
     await say({ text: `Error: ${err}`, thread_ts: message.ts });
-  }
-});
-
-// ─── /analytics slash command ────────────────────────────────────────────────
-
-app.command("/analytics", async ({ command, ack, say }) => {
-  await ack();
-  const prompt = command.text?.trim() || "Show recent spend by channel";
-  try {
-    const { text: reply } = await answerQuery(prompt, {
-      userId: command.user_id,
-      channelId: command.channel_id,
-    });
-    await say({ text: reply });
-  } catch (e) {
-    const err = e instanceof Error ? e.message : String(e);
-    await say({ text: `Error: ${err}` });
   }
 });
 
@@ -65,13 +69,74 @@ app.command("/analytics", async ({ command, ack, say }) => {
 
 app.command("/geolift", async ({ command, ack, say }) => {
   await ack();
-  const text = command.text?.trim() || "help";
+  const rawText = command.text?.trim() || "help";
+
+  const { client, cleanedText, ambiguous } = resolveClient(
+    rawText,
+    command.channel_id,
+    command.user_id
+  );
+
+  if (ambiguous && !client) {
+    await say({ text: disambiguationMessage() });
+    return;
+  }
+
   try {
-    const reply = await handleGeoliftCommand(text, {
+    const reply = await handleGeoliftCommand(cleanedText, {
       userId: command.user_id,
       channelId: command.channel_id,
+      clientSlug: client?.clientSlug,
     });
-    await say({ text: reply });
+    const prefix = client && client.clientSlug !== "default"
+      ? `_[${client.displayName}]_ `
+      : "";
+    await say({ text: prefix + reply });
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    await say({ text: `Error: ${err}` });
+  }
+});
+
+// ─── /analytics slash command ────────────────────────────────────────────────
+
+app.command("/analytics", async ({ command, ack, say }) => {
+  await ack();
+  const rawText = command.text?.trim() || "Show recent spend by channel";
+
+  // Sub-command: set-default <slug>
+  if (rawText.startsWith("set-default ")) {
+    const slug = rawText.replace("set-default ", "").trim();
+    const success = setDefaultClient("channel", command.channel_id, slug);
+    await say({
+      text: success
+        ? `Default client for this channel set to *${slug}*.`
+        : `Unknown client \`${slug}\`. Available: ${listClientSlugs().join(", ")}`,
+    });
+    return;
+  }
+
+  const { client, cleanedText, ambiguous } = resolveClient(
+    rawText,
+    command.channel_id,
+    command.user_id
+  );
+
+  if (ambiguous && !client) {
+    await say({ text: disambiguationMessage() });
+    return;
+  }
+
+  try {
+    const { text: reply } = await answerQuery(cleanedText, {
+      userId: command.user_id,
+      channelId: command.channel_id,
+      clientSlug: client?.clientSlug,
+    });
+    const prefix = client && client.clientSlug !== "default"
+      ? `_[${client.displayName}]_ `
+      : "";
+    await say({ text: prefix + reply });
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
     await say({ text: `Error: ${err}` });
@@ -102,12 +167,14 @@ async function pollCompletedExperiments(): Promise<void> {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 3001;
 (async () => {
+  loadClientRegistry();
   await app.start(port);
+  const slugs = listClientSlugs();
   console.log(`Slack bot running on port ${port}`);
-  console.log(`  /analytics — NL → SQL analytics queries`);
-  console.log(`  /geolift  — GeoLift experiment management`);
+  console.log(`  Clients: ${slugs.length > 0 ? slugs.join(", ") : "(single-client mode)"}`);
+  console.log(`  Commands: /analytics, /geolift`);
 
   // Start polling for completed experiments
   if (EXPERIMENT_CHANNEL_ID) {

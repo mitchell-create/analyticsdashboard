@@ -15,6 +15,9 @@ node_modules/
 measurement-platform/services/slack-bot/node_modules/
 measurement-platform/services/slack-bot/dist/
 
+# Client credentials (multi-client registry)
+clients.json
+
 # Python
 __pycache__/
 *.py[cod]

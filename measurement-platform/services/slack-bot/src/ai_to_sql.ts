@@ -100,7 +100,7 @@ function isReportRequest(prompt: string): boolean {
  */
 async function answerReportQuery(
   prompt: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<{ text: string; error?: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -199,16 +199,17 @@ Rules:
         continue;
       }
 
-      const { data, error } = await runReadOnlyQuery(sql);
+      const { data, error } = await runReadOnlyQuery(sql, options.clientSlug);
       await logQueryAudit({
         user_id: options.userId,
         channel_id: options.channelId,
+        client_slug: options.clientSlug,
         prompt: `[Report] ${label}`,
         sql_executed: sql,
         table_used: extractTablesUsed(sql) ?? undefined,
         row_count: Array.isArray(data) ? data.length : 0,
         error_message: error?.message,
-      });
+      }, options.clientSlug);
 
       if (error) {
         sections.push(`*${label}* — Error: ${error.message}`);
@@ -355,7 +356,7 @@ async function promptToSql(prompt: string): Promise<string | null> {
  */
 export async function answerQuery(
   prompt: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<{ text: string; error?: string }> {
   // Report mode: multi-query summary + tables
   if (isReportRequest(prompt)) {
@@ -377,26 +378,28 @@ export async function answerQuery(
     await logQueryAudit({
       user_id: options.userId,
       channel_id: options.channelId,
+      client_slug: options.clientSlug,
       prompt,
       sql_executed: null,
       error_message: check.reason ?? "Blocked",
-    });
+    }, options.clientSlug);
     return { text: `Query not allowed: ${check.reason ?? "blocked"}.` };
   }
 
-  const { data, error } = await runReadOnlyQuery(sql);
+  const { data, error } = await runReadOnlyQuery(sql, options.clientSlug);
   const tableUsed = extractTablesUsed(sql);
   const rowCount = Array.isArray(data) ? data.length : 0;
 
   await logQueryAudit({
     user_id: options.userId,
     channel_id: options.channelId,
+    client_slug: options.clientSlug,
     prompt,
     sql_executed: sql,
     table_used: tableUsed ?? undefined,
     row_count: rowCount,
     error_message: error?.message,
-  });
+  }, options.clientSlug);
 
   if (error) {
     return { text: `Error running query: ${error.message}`, error: error.message };

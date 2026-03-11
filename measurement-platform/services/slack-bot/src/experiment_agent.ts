@@ -107,7 +107,7 @@ function parseRunCommand(text: string): ParsedRunCommand | string {
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
-async function validateRunParams(params: ParsedRunCommand): Promise<ValidationError[]> {
+async function validateRunParams(params: ParsedRunCommand, clientSlug?: string): Promise<ValidationError[]> {
   const errors: ValidationError[] = [];
 
   // Slug format
@@ -168,19 +168,19 @@ async function validateRunParams(params: ParsedRunCommand): Promise<ValidationEr
 
   // If basic validation passes, check DB
   if (errors.length === 0) {
-    await validateGeosExist(params, errors);
-    await validateGeoDataCoverage(params, errors);
-    await validateSlugUnique(params.slug, errors);
+    await validateGeosExist(params, errors, clientSlug);
+    await validateGeoDataCoverage(params, errors, clientSlug);
+    await validateSlugUnique(params.slug, errors, clientSlug);
   }
 
   return errors;
 }
 
-async function validateGeosExist(params: ParsedRunCommand, errors: ValidationError[]): Promise<void> {
+async function validateGeosExist(params: ParsedRunCommand, errors: ValidationError[], clientSlug?: string): Promise<void> {
   const allGeos = [...new Set([...params.treatmentGeos, ...params.holdoutGeos])];
   const quotedGeos = allGeos.map((g) => `'${g}'`).join(",");
   const sql = `SELECT geo_id FROM public_marts.dim_geo WHERE geo_id IN (${quotedGeos})`;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   const found = new Set((data as { geo_id: string }[]).map((r) => r.geo_id));
   const missing = allGeos.filter((g) => !found.has(g));
   if (missing.length > 0) {
@@ -188,7 +188,7 @@ async function validateGeosExist(params: ParsedRunCommand, errors: ValidationErr
   }
 }
 
-async function validateGeoDataCoverage(params: ParsedRunCommand, errors: ValidationError[]): Promise<void> {
+async function validateGeoDataCoverage(params: ParsedRunCommand, errors: ValidationError[], clientSlug?: string): Promise<void> {
   const allGeos = [...new Set([...params.treatmentGeos, ...params.holdoutGeos])];
   const quotedGeos = allGeos.map((g) => `'${g}'`).join(",");
   const sql = `
@@ -198,7 +198,7 @@ async function validateGeoDataCoverage(params: ParsedRunCommand, errors: Validat
       AND report_date >= '${params.startDate}' AND report_date <= '${params.endDate}'
     GROUP BY geo_id
   `;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   const coverage = new Map((data as { geo_id: string; day_count: string }[]).map((r) => [r.geo_id, parseInt(r.day_count, 10)]));
   const noData = allGeos.filter((g) => !coverage.has(g));
   if (noData.length > 0) {
@@ -213,9 +213,9 @@ async function validateGeoDataCoverage(params: ParsedRunCommand, errors: Validat
   }
 }
 
-async function validateSlugUnique(slug: string, errors: ValidationError[]): Promise<void> {
+async function validateSlugUnique(slug: string, errors: ValidationError[], clientSlug?: string): Promise<void> {
   const sql = `SELECT experiment_slug, status FROM public.experiments WHERE experiment_slug = '${slug.replace(/'/g, "''")}'`;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   if (Array.isArray(data) && data.length > 0) {
     const existing = data[0] as { status: string };
     errors.push({
@@ -227,8 +227,8 @@ async function validateSlugUnique(slug: string, errors: ValidationError[]): Prom
 
 // ─── Queue Experiment ────────────────────────────────────────────────────────
 
-async function queueExperiment(params: ParsedRunCommand): Promise<{ id: number } | string> {
-  const supabase = getSupabase();
+async function queueExperiment(params: ParsedRunCommand, clientSlug?: string): Promise<{ id: number } | string> {
+  const supabase = getSupabase(clientSlug);
   if (!supabase) return "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY.";
 
   const row = {
@@ -250,32 +250,32 @@ async function queueExperiment(params: ParsedRunCommand): Promise<{ id: number }
 
 // ─── Fetch Experiment ────────────────────────────────────────────────────────
 
-async function fetchExperiment(slug: string): Promise<ExperimentRow | null> {
+async function fetchExperiment(slug: string, clientSlug?: string): Promise<ExperimentRow | null> {
   const sql = `SELECT id, experiment_slug, experiment_type, start_date::text, end_date::text, config, status, created_at::text FROM public.experiments WHERE experiment_slug = '${slug.replace(/'/g, "''")}'`;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   if (!Array.isArray(data) || data.length === 0) return null;
   return data[0] as ExperimentRow;
 }
 
-async function fetchExperimentResults(experimentId: number): Promise<ExperimentResult[]> {
+async function fetchExperimentResults(experimentId: number, clientSlug?: string): Promise<ExperimentResult[]> {
   const sql = `
     SELECT result_date::text, metric, value, interval_lower, interval_upper, metadata
     FROM public.experiment_results
     WHERE experiment_id = ${experimentId}
     ORDER BY result_date
   `;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   return (data || []) as ExperimentResult[];
 }
 
-async function fetchRecentExperiments(limit = 10): Promise<ExperimentRow[]> {
+async function fetchRecentExperiments(limit = 10, clientSlug?: string): Promise<ExperimentRow[]> {
   const sql = `
     SELECT id, experiment_slug, experiment_type, start_date::text, end_date::text, config, status, created_at::text
     FROM public.experiments
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   return (data || []) as ExperimentRow[];
 }
 
@@ -367,7 +367,7 @@ function interpretResults(experiment: ExperimentRow, results: ExperimentResult[]
 
 // ─── Geo Coverage Check ─────────────────────────────────────────────────────
 
-async function checkGeoCoverage(startDate: string, endDate: string): Promise<string> {
+async function checkGeoCoverage(startDate: string, endDate: string, clientSlug?: string): Promise<string> {
   if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate)) {
     return "Usage: `/geolift check-geos <start_date> <end_date>` (YYYY-MM-DD)";
   }
@@ -384,7 +384,7 @@ async function checkGeoCoverage(startDate: string, endDate: string): Promise<str
     ORDER BY total_revenue DESC
   `;
 
-  const { data, error } = await runReadOnlyQuery(sql);
+  const { data, error } = await runReadOnlyQuery(sql, clientSlug);
   if (error) return `Error checking geos: ${error.message}`;
   if (!Array.isArray(data) || data.length === 0) return "No geos found in dim_geo.";
 
@@ -418,7 +418,7 @@ async function checkGeoCoverage(startDate: string, endDate: string): Promise<str
  */
 export async function handleGeoliftCommand(
   text: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<string> {
   const trimmed = text.trim();
   const parts = trimmed.split(/\s+/);
@@ -429,13 +429,13 @@ export async function handleGeoliftCommand(
       case "run":
         return await handleRun(parts.slice(1).join(" "), options);
       case "status":
-        return await handleStatus(parts[1]);
+        return await handleStatus(parts[1], options.clientSlug);
       case "results":
-        return await handleResults(parts[1]);
+        return await handleResults(parts[1], options.clientSlug);
       case "list":
-        return await handleList();
+        return await handleList(options.clientSlug);
       case "check-geos":
-        return await checkGeoCoverage(parts[1] || "", parts[2] || "");
+        return await checkGeoCoverage(parts[1] || "", parts[2] || "", options.clientSlug);
       case "help":
       default:
         return HELP_TEXT;
@@ -446,22 +446,23 @@ export async function handleGeoliftCommand(
   }
 }
 
-async function handleRun(text: string, options: { userId?: string; channelId?: string }): Promise<string> {
+async function handleRun(text: string, options: { userId?: string; channelId?: string; clientSlug?: string }): Promise<string> {
   const parsed = parseRunCommand(text);
   if (typeof parsed === "string") return parsed;
 
-  const errors = await validateRunParams(parsed);
+  const errors = await validateRunParams(parsed, options.clientSlug);
   if (errors.length > 0) {
     const errorList = errors.map((e) => `- ${e.message}`).join("\n");
     return `:x: *Validation failed:*\n${errorList}`;
   }
 
-  const result = await queueExperiment(parsed);
+  const result = await queueExperiment(parsed, options.clientSlug);
   if (typeof result === "string") return `:x: ${result}`;
 
   await logQueryAudit({
     user_id: options.userId,
     channel_id: options.channelId,
+    client_slug: options.clientSlug,
     prompt: `[GeoLift] run ${parsed.slug}`,
     sql_executed: null,
     metadata: {
@@ -470,7 +471,7 @@ async function handleRun(text: string, options: { userId?: string; channelId?: s
       treatment_geos: parsed.treatmentGeos,
       holdout_geos: parsed.holdoutGeos,
     },
-  });
+  }, options.clientSlug);
 
   return `:white_check_mark: *Experiment queued!*
 
@@ -484,10 +485,10 @@ async function handleRun(text: string, options: { userId?: string; channelId?: s
 The experiment will be picked up by the next Prefect worker run. Use \`/geolift status ${parsed.slug}\` to check progress.`;
 }
 
-async function handleStatus(slug: string | undefined): Promise<string> {
+async function handleStatus(slug: string | undefined, clientSlug?: string): Promise<string> {
   if (!slug) return "Usage: `/geolift status <experiment-slug>`";
 
-  const exp = await fetchExperiment(slug);
+  const exp = await fetchExperiment(slug, clientSlug);
   if (!exp) return `:grey_question: No experiment found with slug \`${slug}\`.`;
 
   const config = exp.config || {};
@@ -519,22 +520,22 @@ async function handleStatus(slug: string | undefined): Promise<string> {
   return text;
 }
 
-async function handleResults(slug: string | undefined): Promise<string> {
+async function handleResults(slug: string | undefined, clientSlug?: string): Promise<string> {
   if (!slug) return "Usage: `/geolift results <experiment-slug>`";
 
-  const exp = await fetchExperiment(slug);
+  const exp = await fetchExperiment(slug, clientSlug);
   if (!exp) return `:grey_question: No experiment found with slug \`${slug}\`.`;
 
   if (exp.status !== "completed" && exp.status !== "running") {
     return `:hourglass: Experiment \`${slug}\` has status \`${exp.status}\`. Results are available after the experiment completes.`;
   }
 
-  const results = await fetchExperimentResults(exp.id);
+  const results = await fetchExperimentResults(exp.id, clientSlug);
   return interpretResults(exp, results);
 }
 
-async function handleList(): Promise<string> {
-  const experiments = await fetchRecentExperiments(10);
+async function handleList(clientSlug?: string): Promise<string> {
+  const experiments = await fetchRecentExperiments(10, clientSlug);
   if (experiments.length === 0) return "No experiments found. Create one with `/geolift run`.";
 
   const statusEmoji: Record<string, string> = {
@@ -577,7 +578,7 @@ export function isExperimentQuery(text: string): boolean {
  */
 export async function answerExperimentQuery(
   prompt: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<string> {
   const lower = prompt.toLowerCase();
 
@@ -585,27 +586,28 @@ export async function answerExperimentQuery(
   if (/\b(status|progress)\b.*\b\w+[-]\w+/.test(lower)) {
     const slugMatch = prompt.match(/\b([a-z0-9][-a-z0-9]+[a-z0-9])\b/);
     if (slugMatch) {
-      const exp = await fetchExperiment(slugMatch[1]);
-      if (exp) return await handleStatus(slugMatch[1]);
+      const exp = await fetchExperiment(slugMatch[1], options.clientSlug);
+      if (exp) return await handleStatus(slugMatch[1], options.clientSlug);
     }
   }
 
   if (/\bresults?\b.*\b\w+[-]\w+/.test(lower)) {
     const slugMatch = prompt.match(/\b([a-z0-9][-a-z0-9]+[a-z0-9])\b/);
     if (slugMatch) {
-      const exp = await fetchExperiment(slugMatch[1]);
-      if (exp) return await handleResults(slugMatch[1]);
+      const exp = await fetchExperiment(slugMatch[1], options.clientSlug);
+      if (exp) return await handleResults(slugMatch[1], options.clientSlug);
     }
   }
 
   if (/\b(list|show|recent)\b.*\bexperiment/i.test(lower)) {
-    return await handleList();
+    return await handleList(options.clientSlug);
   }
 
   if (/\b(which|what)\b.*\bgeos?\b.*\b(have|data|available)\b/i.test(lower)) {
     return await checkGeoCoverage(
       new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
-      new Date().toISOString().slice(0, 10)
+      new Date().toISOString().slice(0, 10),
+      options.clientSlug
     );
   }
 
@@ -657,7 +659,7 @@ Give concise, practical guidance. If the user wants to run a test, suggest the e
  * Check for recently completed experiments and return formatted results.
  * Can be called by a periodic job to post results back to Slack.
  */
-export async function getNewlyCompletedResults(): Promise<{ slug: string; message: string }[]> {
+export async function getNewlyCompletedResults(clientSlug?: string): Promise<{ slug: string; message: string }[]> {
   const sql = `
     SELECT id, experiment_slug, experiment_type, start_date::text, end_date::text, config, status, created_at::text
     FROM public.experiments
@@ -666,12 +668,12 @@ export async function getNewlyCompletedResults(): Promise<{ slug: string; messag
     ORDER BY updated_at DESC
     LIMIT 5
   `;
-  const { data } = await runReadOnlyQuery(sql);
+  const { data } = await runReadOnlyQuery(sql, clientSlug);
   if (!Array.isArray(data) || data.length === 0) return [];
 
   const output: { slug: string; message: string }[] = [];
   for (const row of data as ExperimentRow[]) {
-    const results = await fetchExperimentResults(row.id);
+    const results = await fetchExperimentResults(row.id, clientSlug);
     const message = interpretResults(row, results);
     output.push({ slug: row.experiment_slug, message });
   }
