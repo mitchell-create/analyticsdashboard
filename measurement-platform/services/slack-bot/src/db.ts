@@ -92,6 +92,8 @@ function getPool(clientSlug?: string): Pool | null {
     connectionString: dbUrl,
     ssl: { rejectUnauthorized: false },
     max: 3,
+    connectionTimeoutMillis: 15000,
+    idleTimeoutMillis: 30000,
   });
   pgPools.set(key, pool);
   return pool;
