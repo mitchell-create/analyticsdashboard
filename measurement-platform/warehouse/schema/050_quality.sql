@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS public.ai_query_audit (
   query_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   user_id       TEXT,
   channel_id    TEXT,
+  client_slug   TEXT,             -- which client DB was queried (multi-client routing)
   prompt        TEXT,
   sql_executed  TEXT,
   table_used    TEXT,

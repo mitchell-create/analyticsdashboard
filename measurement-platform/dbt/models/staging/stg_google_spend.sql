@@ -1,5 +1,5 @@
 -- stg_google_spend — Staging for Google Ads daily spend (from Airbyte raw)
--- Adjust source table and column names to match your Airbyte Google Ads connector output.
+-- Outputs account_id (customer_id) for joining with client_ad_accounts to assign client_slug.
 
 {{
   config(
@@ -9,11 +9,12 @@
 }}
 
 with source as (
-  select * from {{ source('raw_airbyte', 'account_performance_report') }}
+  select * from {{ source('raw_airbyte', 'google_account_performance_report') }}
 ),
 
 renamed as (
   select
+    customer_id::text as account_id,
     date_trunc('day', (segments_date::date))::date as report_date,
     'google' as channel,
     coalesce(metrics_cost_micros::numeric(14, 2) / 1e6, 0) as spend,

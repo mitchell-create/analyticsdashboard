@@ -1,5 +1,6 @@
 -- fact_kpi_geo_daily — Daily revenue/orders by geography (from Shopify shipping_address)
 -- Uses stg_shopify_orders_geo (province_code from shipping_address) joined to dim_geo.
+-- Currently Expand-only (GeoLift experiments). Add other clients when geo data is available.
 {{
   config(
     materialized='table',
@@ -8,7 +9,9 @@
 }}
 
 with kpi as (
-  select report_date, revenue, orders from {{ ref('fact_kpi_daily') }}
+  select report_date, revenue, orders
+  from {{ ref('fact_kpi_daily') }}
+  where client_slug = 'expand'
 ),
 geo as (
   select geo_id from {{ ref('dim_geo') }}
