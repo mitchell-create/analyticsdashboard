@@ -58,13 +58,13 @@ ${GEOLIFT_BEST_PRACTICES}
 
 If the user asks about their current experiments or data, use the CONTEXT block below. Be concise; Slack messages should be scannable. Use bullet points and short paragraphs.`;
 
-async function fetchExperimentContext(): Promise<string> {
+async function fetchExperimentContext(clientSlug?: string): Promise<string> {
   const { data: exps } = await runReadOnlyQuery(`
     SELECT experiment_slug, experiment_type, start_date, end_date, status, config
     FROM public.experiments
     ORDER BY created_at DESC
     LIMIT 10
-  `);
+  `, clientSlug);
   if (!Array.isArray(exps) || exps.length === 0) {
     return "No experiments found in the database yet.";
   }
@@ -75,11 +75,11 @@ async function fetchExperimentContext(): Promise<string> {
   return lines.join("\n");
 }
 
-async function fetchDataSummary(): Promise<string> {
+async function fetchDataSummary(clientSlug?: string): Promise<string> {
   const { data: geo } = await runReadOnlyQuery(`
     SELECT COUNT(DISTINCT geo_id) AS geos, MIN(report_date) AS min_date, MAX(report_date) AS max_date
     FROM public_marts.fact_kpi_geo_daily WHERE revenue > 0 OR orders > 0
-  `);
+  `, clientSlug);
   const geoInfo =
     Array.isArray(geo) && geo.length > 0
       ? `fact_kpi_geo_daily: ${(geo[0] as Record<string, unknown>).geos} geos with data, ${(geo[0] as Record<string, unknown>).min_date} to ${(geo[0] as Record<string, unknown>).max_date}`
@@ -89,7 +89,7 @@ async function fetchDataSummary(): Promise<string> {
 
 export async function answerExperimentQuery(
   prompt: string,
-  options?: { userId?: string; channelId?: string }
+  options?: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<{ text: string; error?: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -102,8 +102,8 @@ export async function answerExperimentQuery(
 
   try {
     const [expContext, dataSummary] = await Promise.all([
-      fetchExperimentContext(),
-      fetchDataSummary(),
+      fetchExperimentContext(options?.clientSlug),
+      fetchDataSummary(options?.clientSlug),
     ]);
 
     const contextBlock = `

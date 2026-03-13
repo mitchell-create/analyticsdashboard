@@ -19,7 +19,7 @@ with chubble_orders as (
     financial_status,
     'chubble' as store_name
   from {{ source('raw_airbyte', 'chubble_orders') }}
-  where financial_status in ('paid', 'partially_paid')
+  where financial_status not in ('refunded', 'voided')
 ),
 
 expand_orders as (
@@ -32,7 +32,7 @@ expand_orders as (
     financial_status,
     'expand' as store_name
   from {{ source('raw_airbyte', 'expand_orders') }}
-  where financial_status in ('paid', 'partially_paid')
+  where financial_status not in ('refunded', 'voided')
 ),
 
 -- Uncomment these as the tables become available:
@@ -46,7 +46,7 @@ expand_orders as (
 --     financial_status,
 --     'babybay' as store_name
 --   from {{ source('raw_airbyte', 'orders_babybay') }}
---   where financial_status in ('paid', 'partially_paid')
+--   where financial_status not in ('refunded', 'voided')
 -- ),
 
 -- crazyrumors_orders as (
@@ -59,7 +59,7 @@ expand_orders as (
 --     financial_status,
 --     'crazyrumors' as store_name
 --   from {{ source('raw_airbyte', 'orders_crazyrumors') }}
---   where financial_status in ('paid', 'partially_paid')
+--   where financial_status not in ('refunded', 'voided')
 -- ),
 
 -- zoka_orders as (
@@ -72,7 +72,7 @@ expand_orders as (
 --     financial_status,
 --     'zoka' as store_name
 --   from {{ source('raw_airbyte', 'orders_zoka') }}
---   where financial_status in ('paid', 'partially_paid')
+--   where financial_status not in ('refunded', 'voided')
 -- ),
 
 -- motive_orders as (
@@ -85,7 +85,7 @@ expand_orders as (
 --     financial_status,
 --     'motive' as store_name
 --   from {{ source('raw_airbyte', 'orders_motive') }}
---   where financial_status in ('paid', 'partially_paid')
+--   where financial_status not in ('refunded', 'voided')
 -- ),
 
 unified_orders as (

@@ -14,7 +14,6 @@ const DEFAULT_SQL_MODEL = "gpt-4o-mini";
 const SCHEMA = "public_marts";
 const MAX_REPORT_METRICS = 8;
 const MAX_ROWS_PER_TABLE = 5;
-const CLIENT_SLUG = process.env.CLIENT_SLUG || "default";
 
 /** Format a value for report display (currency, decimals, commas). */
 function formatReportValue(val: unknown, columnName = ""): string {
@@ -46,6 +45,50 @@ function cleanHeader(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  january: 1, jan: 1, february: 2, feb: 2, march: 3, mar: 3, april: 4, apr: 4,
+  may: 5, june: 6, jun: 6, july: 7, jul: 7, august: 8, aug: 8,
+  september: 9, sept: 9, sep: 9, october: 10, oct: 10, november: 11, nov: 11,
+  december: 12, dec: 12,
+};
+
+/** Parse calendar month pair from prompt (e.g. "February 2026 vs January 2026"). */
+function parseCalendarMonthPair(
+  prompt: string
+): { currentStart: string; currentEnd: string; priorStart: string; priorEnd: string; periodLabel: string } | null {
+  const lower = prompt.toLowerCase();
+  // Match "February 2026 vs January 2026" or "Feb vs Jan" (year optional for second)
+  const match = lower.match(
+    /(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)\s*(\d{4})?\s*(?:vs\.?|versus)\s*(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)\s*(\d{4})?/
+  );
+  if (!match) return null;
+  const [, currMonthName, currYearStr, priorMonthName, priorYearStr] = match;
+  const currMonth = MONTH_NAMES[currMonthName!];
+  const priorMonth = MONTH_NAMES[priorMonthName!];
+  if (!currMonth || !priorMonth) return null;
+  const year = new Date().getFullYear();
+  const currYear = currYearStr ? parseInt(currYearStr, 10) : year;
+  const priorYear = priorYearStr ? parseInt(priorYearStr, 10) : currMonth === 1 ? currYear - 1 : currYear;
+  const lastDayCurr = new Date(currYear, currMonth, 0).getDate();
+  const lastDayPrior = new Date(priorYear, priorMonth, 0).getDate();
+  const currStart = `${currYear}-${String(currMonth).padStart(2, "0")}-01`;
+  const currEnd = `${currYear}-${String(currMonth).padStart(2, "0")}-${String(lastDayCurr).padStart(2, "0")}`;
+  const priorStart = `${priorYear}-${String(priorMonth).padStart(2, "0")}-01`;
+  const priorEnd = `${priorYear}-${String(priorMonth).padStart(2, "0")}-${String(lastDayPrior).padStart(2, "0")}`;
+  const monthNames: Record<number, string> = {
+    1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+    7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December",
+  };
+  const periodLabel = `${monthNames[currMonth]} ${currYear} vs ${monthNames[priorMonth]} ${priorYear}`;
+  return {
+    currentStart: `DATE '${currStart}'`,
+    currentEnd: `DATE '${currEnd}'`,
+    priorStart: `DATE '${priorStart}'`,
+    priorEnd: `DATE '${priorEnd}'`,
+    periodLabel,
+  };
+}
+
 /** Parse period days from prompt (e.g. "past 7 days" → 7). */
 function parsePeriodDays(prompt: string): number {
   const lower = prompt.toLowerCase();
@@ -64,16 +107,15 @@ function isComparisonRequest(prompt: string): boolean {
 
 const SCHEMA_HINT = `
 Tables (use public_marts schema):
-- public_marts.fact_spend_daily (client_slug, report_date, channel, spend, impressions, clicks)
-- public_marts.fact_kpi_daily (client_slug, report_date, revenue, orders)
-- public_marts.fact_kpi_geo_daily (client_slug, report_date, geo_id, revenue, orders)
+- public_marts.fact_spend_daily (report_date, client_slug, channel, spend, impressions, clicks)
+- public_marts.fact_kpi_daily (report_date, client_slug, revenue, orders)
+- public_marts.fact_kpi_geo_daily (report_date, geo_id, revenue, orders)
 - public_marts.dim_geo (geo_id, geo_name, geo_type)
-- public_marts.fact_tiktok_organic_daily (client_slug, report_date, views, likes, comments, shares, followers)
-- public_marts.fact_klaviyo_daily (client_slug, report_date, campaign_id, sent, opens, clicks)
-- public.marketing_events (client_slug, event_date, event_type, event_name)
-- public.experiments (client_slug, ...), public.experiment_results
-
-IMPORTANT: Every query on per-client tables MUST include: WHERE client_slug = '${CLIENT_SLUG}'
+- public_marts.fact_tiktok_organic_daily (report_date, views, likes, comments, shares, followers)
+- public_marts.fact_tiktok_gmv_daily (report_date, gmv, orders, spend)
+- public_marts.fact_klaviyo_daily (report_date, campaign_id, sent, opens, clicks)
+- public.marketing_events (event_date, event_type, event_name)
+- public.experiments, public.experiment_results
 `;
 
 /**
@@ -97,6 +139,8 @@ function isReportRequest(prompt: string): boolean {
     "report that shows",
     "compare past",
     "compare last",
+    "test output report",
+    "diagnostic report",
   ];
   return reportPhrases.some((p) => lower.includes(p));
 }
@@ -107,7 +151,7 @@ function isReportRequest(prompt: string): boolean {
  */
 async function answerReportQuery(
   prompt: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<{ text: string; error?: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -117,11 +161,40 @@ async function answerReportQuery(
   }
 
   const comparisonMode = isComparisonRequest(prompt);
+  const calendarMonths = parseCalendarMonthPair(prompt);
   const periodDays = parsePeriodDays(prompt);
-  const currentEnd = "CURRENT_DATE";
-  const currentStart = `CURRENT_DATE - INTERVAL '${periodDays} days'`;
-  const priorEnd = `CURRENT_DATE - INTERVAL '${periodDays} days'`;
-  const priorStart = `CURRENT_DATE - INTERVAL '${periodDays * 2} days'`;
+
+  let currentStart: string;
+  let currentEnd: string;
+  let priorStart: string;
+  let priorEnd: string;
+  let periodLabel: string;
+
+  let useInclusiveEnd: boolean;
+  if (calendarMonths) {
+    currentStart = calendarMonths.currentStart;
+    currentEnd = calendarMonths.currentEnd;
+    priorStart = calendarMonths.priorStart;
+    priorEnd = calendarMonths.priorEnd;
+    periodLabel = calendarMonths.periodLabel;
+    useInclusiveEnd = true; // Calendar months: include last day
+  } else {
+    currentEnd = "CURRENT_DATE";
+    currentStart = `CURRENT_DATE - INTERVAL '${periodDays} days'`;
+    priorEnd = `CURRENT_DATE - INTERVAL '${periodDays} days'`;
+    priorStart = `CURRENT_DATE - INTERVAL '${periodDays * 2} days'`;
+    periodLabel = comparisonMode ? `Past ${periodDays} days vs previous ${periodDays} days` : `Past ${periodDays} days`;
+    useInclusiveEnd = false; // Rolling: end date exclusive
+  }
+
+  const currEndCond = useInclusiveEnd ? `report_date <= ${currentEnd}` : `report_date < ${currentEnd}`;
+  const priorEndCond = useInclusiveEnd ? `report_date <= ${priorEnd}` : `report_date < ${priorEnd}`;
+  const currPeriodCond = `report_date >= ${currentStart} AND ${currEndCond}`;
+  const priorPeriodCond = `report_date >= ${priorStart} AND ${priorEndCond}`;
+
+  const clientFilter = options.clientSlug
+    ? `\nIMPORTANT: Add WHERE client_slug = '${options.clientSlug}' to all queries on fact_kpi_daily and fact_spend_daily.`
+    : "";
 
   try {
     const client = new OpenAI({ apiKey });
@@ -130,9 +203,10 @@ async function answerReportQuery(
       ? `You are a SQL expert for a marketing analytics database. The user wants a REPORT with COMPARISON (current vs prior period).
 
 ${SCHEMA_HINT}
+${clientFilter}
 
-Current period: report_date >= ${currentStart} AND report_date < ${currentEnd}
-Prior period: report_date >= ${priorStart} AND report_date < ${priorEnd}
+Current period: ${currPeriodCond}
+Prior period: ${priorPeriodCond}
 
 Generate ${MAX_REPORT_METRICS} PostgreSQL SELECT queries. Each query MUST return a single row with exactly two numeric columns aliased as "current" and "prior".
 Format each as:
@@ -141,15 +215,16 @@ SQL: <single SELECT query>
 
 Example for total revenue:
 SELECT 
-  SUM(CASE WHEN report_date >= ${currentStart} AND report_date < ${currentEnd} THEN revenue ELSE 0 END) as current,
-  SUM(CASE WHEN report_date >= ${priorStart} AND report_date < ${priorEnd} THEN revenue ELSE 0 END) as prior
-FROM public_marts.fact_kpi_daily
+  SUM(CASE WHEN ${currPeriodCond} THEN revenue ELSE 0 END) as current,
+  SUM(CASE WHEN ${priorPeriodCond} THEN revenue ELSE 0 END) as prior
+FROM public_marts.fact_kpi_daily${options.clientSlug ? ` WHERE client_slug = '${options.clientSlug}'` : ""}
 
 For breakdowns (e.g. spend by channel), return multiple rows with dimension column first, then "current" and "prior".
 Rules: Only SELECT. Use public_marts. No explanation, just METRIC/SQL pairs.`
       : `You are a SQL expert for a marketing analytics database. The user wants a REPORT with multiple metrics.
 
 ${SCHEMA_HINT}
+${clientFilter}
 
 Generate exactly ${MAX_REPORT_METRICS} PostgreSQL SELECT queries. Format each as:
 METRIC: <short label>
@@ -196,7 +271,6 @@ Rules:
     if (pairs.length === 0) return { text: "Could not parse report queries. Try: 'ecom summary for past month'." };
 
     const sections: string[] = [];
-    const periodLabel = comparisonMode ? `Past ${periodDays} days vs previous ${periodDays} days` : `Past ${periodDays} days`;
     sections.push(`*📊 Report* (${pairs.length} metrics) — ${periodLabel}\n`);
 
     for (const { label, sql } of pairs) {
@@ -206,16 +280,17 @@ Rules:
         continue;
       }
 
-      const { data, error } = await runReadOnlyQuery(sql);
+      const { data, error } = await runReadOnlyQuery(sql, options.clientSlug);
       await logQueryAudit({
         user_id: options.userId,
         channel_id: options.channelId,
+        client_slug: options.clientSlug,
         prompt: `[Report] ${label}`,
         sql_executed: sql,
         table_used: extractTablesUsed(sql) ?? undefined,
         row_count: Array.isArray(data) ? data.length : 0,
         error_message: error?.message,
-      });
+      }, options.clientSlug);
 
       if (error) {
         sections.push(`*${label}* — Error: ${error.message}`);
@@ -275,27 +350,25 @@ function promptToSqlPatterns(prompt: string): string | null {
   const lower = prompt.toLowerCase().trim();
   if (!lower || lower.length < 2) return null;
 
-  const cf = `client_slug = '${CLIENT_SLUG}'`;
-
   // Texas / geo revenue
   if (lower.includes("texas") && (lower.includes("spend") || lower.includes("revenue"))) {
-    return `SELECT f.report_date, f.geo_id, f.revenue, f.orders FROM ${SCHEMA}.fact_kpi_geo_daily f JOIN ${SCHEMA}.dim_geo g ON f.geo_id = g.geo_id WHERE f.${cf} AND g.geo_name ILIKE '%Texas%' AND (f.revenue > 0 OR f.orders > 0) AND f.report_date >= CURRENT_DATE - INTERVAL '90 days' ORDER BY f.report_date DESC LIMIT 31`;
+    return `SELECT f.report_date, f.geo_id, f.revenue, f.orders FROM ${SCHEMA}.fact_kpi_geo_daily f JOIN ${SCHEMA}.dim_geo g ON f.geo_id = g.geo_id WHERE g.geo_name ILIKE '%Texas%' AND (f.revenue > 0 OR f.orders > 0) AND f.report_date >= CURRENT_DATE - INTERVAL '90 days' ORDER BY f.report_date DESC LIMIT 31`;
   }
   // TikTok organic
   if (lower.includes("tiktok") && (lower.includes("spike") || lower.includes("views"))) {
-    return `SELECT report_date, views, likes FROM ${SCHEMA}.fact_tiktok_organic_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 14`;
+    return `SELECT report_date, views, likes FROM ${SCHEMA}.fact_tiktok_organic_daily ORDER BY report_date DESC LIMIT 14`;
   }
   // Anomalies / data quality
   if (lower.includes("anomal") || lower.includes("yesterday")) {
-    return `SELECT * FROM public.data_quality_flags WHERE ${cf} AND flag_date >= CURRENT_DATE - INTERVAL '1 day' ORDER BY created_at DESC LIMIT 20`;
+    return `SELECT * FROM public.data_quality_flags WHERE flag_date >= CURRENT_DATE - INTERVAL '1 day' ORDER BY created_at DESC LIMIT 20`;
   }
   // Spend by channel (explicit)
   if ((lower.includes("spend") || lower.includes("spending")) && (lower.includes("channel") || lower.includes("by channel"))) {
-    return `SELECT report_date, channel, spend, impressions, clicks FROM ${SCHEMA}.fact_spend_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 30`;
+    return `SELECT report_date, channel, spend, impressions, clicks FROM ${SCHEMA}.fact_spend_daily ORDER BY report_date DESC LIMIT 30`;
   }
   // Revenue / orders (generic)
   if ((lower.includes("revenue") || lower.includes("orders")) && !lower.includes("geo") && !lower.includes("state") && !lower.includes("texas") && !lower.includes("california")) {
-    return `SELECT report_date, revenue, orders FROM ${SCHEMA}.fact_kpi_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 30`;
+    return `SELECT report_date, revenue, orders FROM ${SCHEMA}.fact_kpi_daily ORDER BY report_date DESC LIMIT 30`;
   }
 
   return null;
@@ -318,7 +391,6 @@ ${SCHEMA_HINT}
 Rules:
 - Only SELECT. No INSERT, UPDATE, DELETE, DROP.
 - Use public_marts schema for fact/dim tables.
-- ALWAYS include WHERE client_slug = '${CLIENT_SLUG}' on every per-client table (all tables except dim_geo).
 - Limit results to 50 rows unless the question asks for more.
 - Use report_date for date filtering when relevant.`;
 
@@ -365,7 +437,7 @@ async function promptToSql(prompt: string): Promise<string | null> {
  */
 export async function answerQuery(
   prompt: string,
-  options: { userId?: string; channelId?: string }
+  options: { userId?: string; channelId?: string; clientSlug?: string }
 ): Promise<{ text: string; error?: string }> {
   // Experiment / GeoLift agent: setup, best practices, data context
   if (isExperimentRequest(prompt)) {
@@ -391,26 +463,28 @@ export async function answerQuery(
     await logQueryAudit({
       user_id: options.userId,
       channel_id: options.channelId,
+      client_slug: options.clientSlug,
       prompt,
       sql_executed: null,
       error_message: check.reason ?? "Blocked",
-    });
+    }, options.clientSlug);
     return { text: `Query not allowed: ${check.reason ?? "blocked"}.` };
   }
 
-  const { data, error } = await runReadOnlyQuery(sql);
+  const { data, error } = await runReadOnlyQuery(sql, options.clientSlug);
   const tableUsed = extractTablesUsed(sql);
   const rowCount = Array.isArray(data) ? data.length : 0;
 
   await logQueryAudit({
     user_id: options.userId,
     channel_id: options.channelId,
+    client_slug: options.clientSlug,
     prompt,
     sql_executed: sql,
     table_used: tableUsed ?? undefined,
     row_count: rowCount,
     error_message: error?.message,
-  });
+  }, options.clientSlug);
 
   if (error) {
     return { text: `Error running query: ${error.message}`, error: error.message };

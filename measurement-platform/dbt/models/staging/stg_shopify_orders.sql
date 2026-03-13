@@ -1,7 +1,5 @@
--- stg_shopify_orders — Staging for Shopify orders (per-client table: {client_slug}_orders)
--- Aggregated to daily revenue/orders.
--- Revenue = total_price (matches Shopify's "Total Sales" = net sales + shipping + tax)
--- Excludes fully refunded and voided orders; keeps partially_refunded.
+-- stg_shopify_orders — Staging for Shopify orders (from Airbyte raw); aggregated to daily revenue/orders
+-- Adjust source table and column names to match your Airbyte Shopify connector output.
 
 {{
   config(
@@ -11,12 +9,12 @@
 }}
 
 with source as (
-  select * from {{ source('raw_shopify', 'orders') }}
+  select * from {{ source('raw_airbyte', 'expand_orders') }}
 ),
 
 daily as (
   select
-    '{{ var("client_slug") }}' as client_slug,
+    'expand' as client_slug,
     (created_at::date) as report_date,
     count(*) as orders,
     coalesce(sum(total_price::numeric(14, 2)), 0) as revenue
@@ -25,4 +23,4 @@ daily as (
   group by 1, 2
 )
 
-select * from daily
+select client_slug, report_date, orders, revenue from daily

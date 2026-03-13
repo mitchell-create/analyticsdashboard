@@ -10,11 +10,14 @@ sources:
     tables:
       # Meta: Airbyte stream ads_insights
       - name: ads_insights
+        identifier: meta_ads_insights
         description: Meta Ads daily insights (Airbyte ads_insights)
       - name: ads_insights_region
+        identifier: meta_ads_insights_region
         description: Meta Ads insights by region (US state) for GeoLift
       # Google: stream account_performance_report
       - name: account_performance_report
+        identifier: google_account_performance_report
         description: Google Ads account performance (Airbyte)
       - name: tiktok_advertisers_reports_daily
         description: TikTok Ads daily reports (Airbyte, stream prefix tiktok_)
@@ -55,6 +58,26 @@ sources:
       - name: campaign_values_reports
         identifier: "{{ var('client_slug') }}_klaviyo_campaign_values_reports"
         description: Klaviyo aggregated campaign metrics
+
+  # ------------------------------------------------------------------
+  # Marts config tables (manually managed, not dbt-materialized)
+  # ------------------------------------------------------------------
+  - name: marts_config
+    description: Configuration tables in public_marts (currency, client config)
+    schema: public_marts
+    tables:
+      - name: currency_config
+        description: Per-client currency conversion rates (ad platform → Shopify currency)
+
+  # ------------------------------------------------------------------
+  # Coupler.io (TikTok GMV Max, etc.)
+  # ------------------------------------------------------------------
+  - name: raw_coupler
+    description: Raw data from Coupler.io (TikTok GMV Max)
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: tiktok_gmv_max
+        description: TikTok GMV Max daily report (Coupler.io TikTok connector)
 
   # ------------------------------------------------------------------
   # Optional: Metricool (TikTok organic — disabled by default)
