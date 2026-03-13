@@ -1,0 +1,3 @@
+# Test artifacts from GeoLift runs
+geolift_input_*.csv
+geolift_results_*.csv
