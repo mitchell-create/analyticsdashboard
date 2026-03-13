@@ -1,0 +1,15 @@
+# Don't copy into Docker images
+.env
+.env.*
+!.env.example
+node_modules
+__pycache__
+*.pyc
+.git
+.venv
+venv
+.prefect
+dbt/target
+dbt/dbt_packages
+dbt/profiles.yml
+*.log

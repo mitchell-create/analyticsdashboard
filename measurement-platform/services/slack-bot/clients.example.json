@@ -1,0 +1,16 @@
+[
+  {
+    "slug": "expand",
+    "displayName": "Expand",
+    "supabaseUrl": "https://your-project.supabase.co",
+    "supabaseServiceKey": "eyJhbGciOi...",
+    "dbUrl": "postgresql://postgres.your-project:password@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+  },
+  {
+    "slug": "acme",
+    "displayName": "Acme Corp",
+    "supabaseUrl": "https://another-project.supabase.co",
+    "supabaseServiceKey": "eyJhbGciOi...",
+    "dbUrl": "postgresql://postgres.another-project:password@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+  }
+]

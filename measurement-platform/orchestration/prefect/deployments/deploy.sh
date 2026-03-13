@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# deploy.sh — Register Prefect flows and create deployments (e.g. daily schedule).
-# Prerequisites: prefect installed, PREFECT_API_URL set (or use local Prefect server).
+# deploy.sh — Register Prefect flows and create deployments.
+# Supports per-client deployments when CLIENT_SLUG is set.
+#
+# Usage:
+#   ./deploy.sh                         # default deployments (no client prefix)
+#   CLIENT_SLUG=acme ./deploy.sh        # client-specific: acme-daily, acme-experiments, acme-qa
+#
+# Prerequisites: prefect installed, PREFECT_API_URL set (or local server on 4200).
+# Per-client: set SUPABASE_URL, SUPABASE_SERVICE_KEY, SLACK_* for the client first.
 
 set -euo pipefail
 
@@ -10,33 +17,49 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 export PREFECT_API_URL="${PREFECT_API_URL:-http://127.0.0.1:4200/api}"
 
+CLIENT="${CLIENT_SLUG:-}"
+PREFIX=""
+if [ -n "$CLIENT" ]; then
+  PREFIX="${CLIENT}-"
+  echo "==> Deploying for client: $CLIENT"
+else
+  echo "==> Deploying default (no client prefix)"
+fi
+
 echo "==> Deploying Prefect flows from $FLOWS_DIR"
 
-# Ensure prefect project is set (optional)
-# prefect config set PREFECT_API_URL="$PREFECT_API_URL"
-
-# Build deployment: daily_pipeline (daily schedule)
+# daily_pipeline
 prefect deployment build "$FLOWS_DIR/daily_pipeline.py:daily_pipeline" \
-  --name "daily" \
+  --name "${PREFIX}daily" \
   --cron "0 6 * * *" \
-  --output "$SCRIPT_DIR/daily_pipeline-deployment.yaml" \
+  --output "$SCRIPT_DIR/${PREFIX}daily_pipeline-deployment.yaml" \
   --path "$REPO_ROOT" \
   || true
 
-# Build deployment: run_experiments (e.g. every 6h for queued experiments)
+# run_experiments
 prefect deployment build "$FLOWS_DIR/run_experiments.py:run_experiments" \
-  --name "scheduled" \
+  --name "${PREFIX}scheduled" \
   --cron "0 */6 * * *" \
-  --output "$SCRIPT_DIR/run_experiments-deployment.yaml" \
+  --output "$SCRIPT_DIR/${PREFIX}run_experiments-deployment.yaml" \
   --path "$REPO_ROOT" \
   || true
 
-# Build deployment: qa_checks (on demand or chained after daily_pipeline)
+# qa_checks
 prefect deployment build "$FLOWS_DIR/qa_checks.py:qa_checks" \
-  --name "qa_checks" \
-  --output "$SCRIPT_DIR/qa_checks-deployment.yaml" \
+  --name "${PREFIX}qa_checks" \
+  --output "$SCRIPT_DIR/${PREFIX}qa_checks-deployment.yaml" \
   --path "$REPO_ROOT" \
   || true
 
-echo "==> Apply deployments with: prefect deployment apply $SCRIPT_DIR/*.yaml"
-echo "==> Start worker: prefect worker start --pool default-pool"
+echo ""
+echo "==> Apply deployments:"
+echo "    prefect deployment apply $SCRIPT_DIR/${PREFIX}*.yaml"
+echo ""
+echo "==> Start worker:"
+echo "    prefect worker start --pool default-pool"
+if [ -n "$CLIENT" ]; then
+  echo ""
+  echo "==> Client '$CLIENT' env vars must be set in the worker process:"
+  echo "    SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_DB_URL"
+  echo "    SLACK_BOT_TOKEN, SLACK_ALERT_CHANNEL_ID"
+fi

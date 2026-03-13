@@ -1,0 +1,29 @@
+# Prefect worker for measurement-platform — runs daily_pipeline (dbt + Supabase)
+# Deploy to Railway, connect to Prefect Cloud. Requires env: PREFECT_API_URL, PREFECT_API_KEY, etc.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dbt and system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project
+COPY . .
+
+# Use profiles template (env vars evaluated at dbt run time)
+RUN cp dbt/profiles.yml.template dbt/profiles.yml
+
+# Install Python deps (Prefect, dbt, Supabase, Slack)
+RUN pip install --no-cache-dir -r orchestration/prefect/requirements.txt \
+    && pip install --no-cache-dir dbt-postgres
+
+# Default: run Prefect worker
+# Worker needs: PREFECT_API_URL, PREFECT_API_KEY, SUPABASE_*, DBT_PROJECT_DIR, etc.
+ENV DBT_PROJECT_DIR=/app/dbt
+ENV Path="/usr/local/bin:/usr/bin:/bin"
+
+CMD ["sh", "-c", "prefect worker start --pool default-agent-pool --type process"]

@@ -1,5 +1,5 @@
--- stg_meta_spend — Staging for Meta Ads daily spend (from Airbyte raw)
--- Adjust source table and column names to match your Airbyte Meta connector output.
+-- stg_meta_spend — Staging for Meta Ads daily spend
+-- Shared table (all clients); derives client_slug from account_id via client_ad_accounts seed.
 
 {{
   config(
@@ -9,17 +9,25 @@
 }}
 
 with source as (
-  select * from {{ source('raw_airbyte', 'ads_insights') }}
+  select * from {{ source('raw_shared', 'ads_insights') }}
+),
+
+account_map as (
+  select account_id, client_slug
+  from {{ ref('client_ad_accounts') }}
+  where platform = 'meta'
 ),
 
 renamed as (
   select
-    date_trunc('day', (date_start::date))::date as report_date,
+    coalesce(m.client_slug, '{{ var("client_slug") }}') as client_slug,
+    date_trunc('day', (s.date_start::date))::date as report_date,
     'meta' as channel,
-    coalesce(spend::numeric(14, 2), 0) as spend,
-    impressions::bigint as impressions,
-    clicks::bigint as clicks
-  from source
+    coalesce(s.spend::numeric(14, 2), 0) as spend,
+    s.impressions::bigint as impressions,
+    s.clicks::bigint as clicks
+  from source s
+  left join account_map m on s.account_id::text = m.account_id
 )
 
 select * from renamed

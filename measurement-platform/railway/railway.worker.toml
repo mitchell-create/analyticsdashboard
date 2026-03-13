@@ -1,0 +1,13 @@
+# Railway config for Prefect worker service
+# Deploy: railway up (from repo root, or link this service)
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "railway/Dockerfile.worker"
+
+[deploy]
+startCommand = "prefect worker start --pool default-agent-pool --type process"
+healthcheckPath = ""
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

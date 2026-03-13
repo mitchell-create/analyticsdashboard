@@ -1,13 +1,17 @@
 -- dim_campaign — Campaign dimension (from Klaviyo + ad campaign metadata)
 {{
   config(
-    materialized='table',
-    schema='marts'
+    materialized='incremental',
+    schema='marts',
+    unique_key=['client_slug', 'campaign_id'],
+    incremental_strategy='merge',
+    on_schema_change='sync_all_columns'
   )
 }}
 
 with klaviyo as (
   select distinct
+    client_slug,
     campaign_id,
     'klaviyo' as source,
     null::text as channel
@@ -15,16 +19,9 @@ with klaviyo as (
   where campaign_id is not null
 )
 select
+  client_slug,
   campaign_id,
   campaign_id as campaign_name,
   source,
   channel
 from klaviyo
-union
--- Placeholder for ad campaigns (Meta/Google/TikTok campaign IDs when available)
-select
-  'unknown' as campaign_id,
-  'Unknown' as campaign_name,
-  'manual' as source,
-  null::text as channel
-where false

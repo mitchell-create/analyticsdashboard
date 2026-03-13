@@ -12,15 +12,16 @@ from prefect import flow, task
 
 @task
 def fetch_queued_experiments() -> list:
-    """Fetch experiments with status = 'queued' from Supabase."""
+    """Fetch experiments with status = 'queued' for this client from Supabase."""
     try:
         from supabase import create_client
         url = os.environ.get("SUPABASE_URL")
         key = os.environ.get("SUPABASE_SERVICE_KEY")
+        slug = os.environ.get("CLIENT_SLUG", "default")
         if not url or not key:
             return []
         client = create_client(url, key)
-        r = client.table("experiments").select("*").eq("status", "queued").execute()
+        r = client.table("experiments").select("*").eq("client_slug", slug).eq("status", "queued").execute()
         return r.data or []
     except Exception as e:
         print(f"Fetch queued experiments failed: {e}")

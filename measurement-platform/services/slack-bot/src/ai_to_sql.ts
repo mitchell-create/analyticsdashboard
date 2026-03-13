@@ -14,6 +14,7 @@ const DEFAULT_SQL_MODEL = "gpt-4o-mini";
 const SCHEMA = "public_marts";
 const MAX_REPORT_METRICS = 8;
 const MAX_ROWS_PER_TABLE = 5;
+const CLIENT_SLUG = process.env.CLIENT_SLUG || "default";
 
 /** Format a value for report display (currency, decimals, commas). */
 function formatReportValue(val: unknown, columnName = ""): string {
@@ -63,14 +64,16 @@ function isComparisonRequest(prompt: string): boolean {
 
 const SCHEMA_HINT = `
 Tables (use public_marts schema):
-- public_marts.fact_spend_daily (report_date, channel, spend, impressions, clicks)
-- public_marts.fact_kpi_daily (report_date, revenue, orders)
-- public_marts.fact_kpi_geo_daily (report_date, geo_id, revenue, orders)
+- public_marts.fact_spend_daily (client_slug, report_date, channel, spend, impressions, clicks)
+- public_marts.fact_kpi_daily (client_slug, report_date, revenue, orders)
+- public_marts.fact_kpi_geo_daily (client_slug, report_date, geo_id, revenue, orders)
 - public_marts.dim_geo (geo_id, geo_name, geo_type)
-- public_marts.fact_tiktok_organic_daily (report_date, views, likes, comments, shares, followers)
-- public_marts.fact_klaviyo_daily (report_date, campaign_id, sent, opens, clicks)
-- public.marketing_events (event_date, event_type, event_name)
-- public.experiments, public.experiment_results
+- public_marts.fact_tiktok_organic_daily (client_slug, report_date, views, likes, comments, shares, followers)
+- public_marts.fact_klaviyo_daily (client_slug, report_date, campaign_id, sent, opens, clicks)
+- public.marketing_events (client_slug, event_date, event_type, event_name)
+- public.experiments (client_slug, ...), public.experiment_results
+
+IMPORTANT: Every query on per-client tables MUST include: WHERE client_slug = '${CLIENT_SLUG}'
 `;
 
 /**
@@ -272,25 +275,27 @@ function promptToSqlPatterns(prompt: string): string | null {
   const lower = prompt.toLowerCase().trim();
   if (!lower || lower.length < 2) return null;
 
+  const cf = `client_slug = '${CLIENT_SLUG}'`;
+
   // Texas / geo revenue
   if (lower.includes("texas") && (lower.includes("spend") || lower.includes("revenue"))) {
-    return `SELECT f.report_date, f.geo_id, f.revenue, f.orders FROM ${SCHEMA}.fact_kpi_geo_daily f JOIN ${SCHEMA}.dim_geo g ON f.geo_id = g.geo_id WHERE g.geo_name ILIKE '%Texas%' AND (f.revenue > 0 OR f.orders > 0) AND f.report_date >= CURRENT_DATE - INTERVAL '90 days' ORDER BY f.report_date DESC LIMIT 31`;
+    return `SELECT f.report_date, f.geo_id, f.revenue, f.orders FROM ${SCHEMA}.fact_kpi_geo_daily f JOIN ${SCHEMA}.dim_geo g ON f.geo_id = g.geo_id WHERE f.${cf} AND g.geo_name ILIKE '%Texas%' AND (f.revenue > 0 OR f.orders > 0) AND f.report_date >= CURRENT_DATE - INTERVAL '90 days' ORDER BY f.report_date DESC LIMIT 31`;
   }
   // TikTok organic
   if (lower.includes("tiktok") && (lower.includes("spike") || lower.includes("views"))) {
-    return `SELECT report_date, views, likes FROM ${SCHEMA}.fact_tiktok_organic_daily ORDER BY report_date DESC LIMIT 14`;
+    return `SELECT report_date, views, likes FROM ${SCHEMA}.fact_tiktok_organic_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 14`;
   }
   // Anomalies / data quality
   if (lower.includes("anomal") || lower.includes("yesterday")) {
-    return `SELECT * FROM public.data_quality_flags WHERE flag_date >= CURRENT_DATE - INTERVAL '1 day' ORDER BY created_at DESC LIMIT 20`;
+    return `SELECT * FROM public.data_quality_flags WHERE ${cf} AND flag_date >= CURRENT_DATE - INTERVAL '1 day' ORDER BY created_at DESC LIMIT 20`;
   }
   // Spend by channel (explicit)
   if ((lower.includes("spend") || lower.includes("spending")) && (lower.includes("channel") || lower.includes("by channel"))) {
-    return `SELECT report_date, channel, spend, impressions, clicks FROM ${SCHEMA}.fact_spend_daily ORDER BY report_date DESC LIMIT 30`;
+    return `SELECT report_date, channel, spend, impressions, clicks FROM ${SCHEMA}.fact_spend_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 30`;
   }
   // Revenue / orders (generic)
   if ((lower.includes("revenue") || lower.includes("orders")) && !lower.includes("geo") && !lower.includes("state") && !lower.includes("texas") && !lower.includes("california")) {
-    return `SELECT report_date, revenue, orders FROM ${SCHEMA}.fact_kpi_daily ORDER BY report_date DESC LIMIT 30`;
+    return `SELECT report_date, revenue, orders FROM ${SCHEMA}.fact_kpi_daily WHERE ${cf} ORDER BY report_date DESC LIMIT 30`;
   }
 
   return null;
@@ -313,6 +318,7 @@ ${SCHEMA_HINT}
 Rules:
 - Only SELECT. No INSERT, UPDATE, DELETE, DROP.
 - Use public_marts schema for fact/dim tables.
+- ALWAYS include WHERE client_slug = '${CLIENT_SLUG}' on every per-client table (all tables except dim_geo).
 - Limit results to 50 rows unless the question asks for more.
 - Use report_date for date filtering when relevant.`;
 

@@ -2,33 +2,40 @@
 -- Uses stg_shopify_orders_geo (province_code from shipping_address) joined to dim_geo.
 {{
   config(
-    materialized='table',
-    schema='marts'
+    materialized='incremental',
+    schema='marts',
+    unique_key=['client_slug', 'report_date', 'geo_id'],
+    incremental_strategy='merge',
+    on_schema_change='sync_all_columns'
   )
 }}
 
 with kpi as (
-  select report_date, revenue, orders from {{ ref('fact_kpi_daily') }}
+  select client_slug, report_date, revenue, orders from {{ ref('fact_kpi_daily') }}
 ),
 geo as (
   select geo_id from {{ ref('dim_geo') }}
 ),
 orders_geo as (
-  select report_date, geo_id, orders, revenue
+  select client_slug, report_date, geo_id, orders, revenue
   from {{ ref('stg_shopify_orders_geo') }}
 ),
 dates as (
-  select distinct report_date from kpi
+  select distinct client_slug, report_date from kpi
 ),
 crossed as (
-  select d.report_date, g.geo_id
+  select d.client_slug, d.report_date, g.geo_id
   from dates d
   cross join geo g
 )
 select
+  c.client_slug,
   c.report_date,
   c.geo_id,
   coalesce(o.revenue, 0)::numeric(14, 2) as revenue,
   coalesce(o.orders, 0)::int as orders
 from crossed c
-left join orders_geo o on c.report_date = o.report_date and c.geo_id = o.geo_id
+left join orders_geo o
+  on c.client_slug = o.client_slug
+  and c.report_date = o.report_date
+  and c.geo_id = o.geo_id

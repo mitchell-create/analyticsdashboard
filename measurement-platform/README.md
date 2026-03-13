@@ -1,8 +1,10 @@
 # Multi-Client Measurement Platform
 
-Repeatable measurement platform (one DB per client) that centralizes marketing and sales data in Supabase, transforms it with dbt, surfaces it in Metabase, runs GeoLift/CausalImpact experiments, orchestrates with Prefect, and powers Slack Q&A and alerts.
+Repeatable measurement platform that centralizes marketing and sales data from multiple clients in a single shared Supabase, transforms with dbt, surfaces in Metabase, runs GeoLift/CausalImpact experiments, orchestrates with Prefect, and powers per-client Slack Q&A and alerts.
 
-**System flow:** Airbyte + Metricool → Supabase → dbt models → Metabase dashboards → GeoLift/CausalImpact runner → Prefect scheduling → Slack Q&A + alerts
+**Architecture:** One Supabase project, all clients. Data separated by `client_slug` column on every table.
+
+**System flow:** Airbyte + Metricool → Supabase (`raw_<client>` schema) → dbt models (with `client_slug`) → Metabase dashboards → GeoLift/CausalImpact runner → Prefect scheduling → Slack Q&A + alerts
 
 ---
 
@@ -10,26 +12,33 @@ Repeatable measurement platform (one DB per client) that centralizes marketing a
 
 | Path | Description |
 |------|-------------|
-| `ops/client-provision/` | Client setup: `provision_client.sh`, `onboarding_checklist.md`, `INGESTION.md` |
-| `warehouse/schema/` | Supabase DDL: `000_core.sql` … `050_quality.sql` |
+| `ops/client-provision/` | Client setup: `provision_client.py`, `onboarding_checklist.md`, `INGESTION.md` |
+| `warehouse/schema/` | Supabase DDL: `000_core.sql` … `065_multi_tenant.sql` |
 | `warehouse/seeds/` | Seed data (e.g. `dim_geo_states.csv`) |
 | `dbt/` | dbt project: staging + marts models, tests, seeds |
 | `services/model-runner/` | GeoLift + CausalImpact runner (Python/R), writes to `experiment_results` |
 | `services/slack-bot/` | Slack Bolt app: AI Q&A (NL → SQL), guardrails, daily_alerts, audit |
 | `orchestration/prefect/` | Flows: `daily_pipeline`, `run_experiments`, `qa_checks`; `deployments/deploy.sh` |
-| `dashboards/metabase/` | `MVP_dashboard_spec.md` (marts-only) |
+| `dashboards/metabase/` | Dashboard scripts + SQL + KPI number cards with comparison |
 
 ---
 
-## Per-client setup (Pattern B)
+## Per-client setup (Shared DB)
 
-1. **Provision client:** Run `ops/client-provision/provision_client.sh <client_slug>` and follow prompts (or create Supabase project manually).
-2. **Apply warehouse schema:** Execute `warehouse/schema/*.sql` in order (000 → 050) in the client’s Supabase SQL Editor.
-3. **Ingestion:** Configure Airbyte (Meta, Google, TikTok Ads, Shopify, Klaviyo) and Metricool (TikTok organic) per [ops/client-provision/INGESTION.md](ops/client-provision/INGESTION.md). Backfill 90 days; nightly refresh last 14–30 days.
-4. **dbt:** Copy `dbt/profiles.yml.template` to `profiles.yml`, set `SUPABASE_DB_*` for this client. Run `dbt seed`, `dbt run`, `dbt test`.
-5. **Metabase:** Add client Supabase as data source; build dashboards from [dashboards/metabase/MVP_dashboard_spec.md](dashboards/metabase/MVP_dashboard_spec.md) (marts only).
-6. **Slack:** Create channel; invite bot; set `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_ALERT_CHANNEL_ID`; set `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_DB_URL` for Q&A.
-7. **Prefect:** Set env for this client; run `orchestration/prefect/deployments/deploy.sh` and apply deployments; start worker.
+All clients share **one Supabase project**. Data is separated by `client_slug`. Run `065_multi_tenant.sql` once to add the column.
+
+**Quick start:**
+```powershell
+python ops/client-provision/provision_client.py acme --supabase-url "..." --supabase-key "..."
+```
+
+**Steps:**
+1. **Provision:** Run `provision_client.py <client_slug>` — generates `.env`, runs schema, registers client.
+2. **Ingestion:** Configure Airbyte to write to `raw_<client_slug>` schema. See [INGESTION.md](ops/client-provision/INGESTION.md).
+3. **dbt:** `dbt run --vars '{client_slug: acme, raw_schema: raw_acme}'`
+4. **Metabase:** `python dashboards/metabase/create_mvp_dashboards.py --client acme`; wire `client_slug` filter.
+5. **Slack:** Deploy one bot per client with `CLIENT_SLUG=acme` in `.env`.
+6. **Prefect:** `CLIENT_SLUG=acme bash orchestration/prefect/deployments/deploy.sh`
 
 Use [ops/client-provision/onboarding_checklist.md](ops/client-provision/onboarding_checklist.md) for the full checklist.
 
@@ -37,26 +46,26 @@ Use [ops/client-provision/onboarding_checklist.md](ops/client-provision/onboardi
 
 ## Local dev
 
-- **dbt:** `cd dbt && dbt deps && dbt run && dbt test`
-- **Slack bot:** `cd services/slack-bot && npm install && npm run build && npm start` (set `.env` from `.env.example`)
-- **Model runner:** `cd services/model-runner && pip install -r requirements.txt` then `python src/runner.py geolift <slug> <start> <end> <treatment_geos> <holdout_geos>` or `causalimpact ...`
-- **Prefect:** `pip install -r orchestration/prefect/requirements.txt`, set `PREFECT_API_URL`, run flows with `prefect deployment run daily_pipeline/daily` or `python orchestration/prefect/flows/daily_pipeline.py`
+- **dbt:** `cd dbt && dbt deps && dbt run --vars '{client_slug: acme, raw_schema: raw_acme}'`
+- **Slack bot:** `cd services/slack-bot && npm install && npm run build && npm start` (set `.env` with `CLIENT_SLUG`)
+- **Model runner:** `cd services/model-runner && pip install -r requirements.txt` then `CLIENT_SLUG=acme python src/runner.py causalimpact ...`
+- **Prefect:** `pip install -r orchestration/prefect/requirements.txt`, set `PREFECT_API_URL` + `CLIENT_SLUG`, run flows
 
 ---
 
 ## Env
 
-Copy [.env.example](.env.example) to `.env` and set values per client. Do not commit `.env`.
+Copy [.env.example](.env.example) to `.env.<client_slug>` and set values. Each `.env` includes `CLIENT_SLUG=<slug>`. Do not commit `.env*` files.
 
 ---
 
 ## Phases (reference)
 
-0. Client setup (provision script + checklist)  
-1. Supabase warehouse schema + seeds  
-2. Data ingestion (Airbyte + Metricool) — see INGESTION.md  
-3. dbt modeling layer (staging + marts + tests)  
-4. Metabase dashboards (MVP spec)  
-5. Incrementality runner (GeoLift/CausalImpact → experiment_results)  
-6. Slack bot (Q&A + guardrails + audit)  
-7. Prefect orchestration (daily pipeline, experiments, QA + deploy)
+0. Client setup (provision script + checklist)
+1. Supabase warehouse schema + seeds + `065_multi_tenant.sql`
+2. Data ingestion (Airbyte to `raw_<client>` schema + Metricool) — see INGESTION.md
+3. dbt modeling layer (staging + marts + tests, with `client_slug` var)
+4. Metabase dashboards (MVP spec + KPI number cards with comparison)
+5. Incrementality runner (GeoLift/CausalImpact → experiment_results)
+6. Slack bot (one per client, Q&A + guardrails + audit)
+7. Prefect orchestration (per-client deployments: daily pipeline, experiments, QA)

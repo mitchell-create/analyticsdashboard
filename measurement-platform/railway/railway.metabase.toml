@@ -1,0 +1,13 @@
+# Railway config for Metabase service
+# Uses Docker image: metabase/metabase
+# Requires Postgres add-on for Metabase app DB (MB_DB_* env vars)
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "railway/Dockerfile.metabase"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
