@@ -69,12 +69,12 @@ sources:
       - name: currency_config
         description: Per-client currency conversion rates (ad platform → Shopify currency)
 
-  # ------------------------------------------------------------------
+   # ------------------------------------------------------------------
   # Coupler.io (TikTok GMV Max, etc.)
   # ------------------------------------------------------------------
   - name: raw_coupler
     description: Raw data from Coupler.io (TikTok GMV Max)
-    schema: "{{ var('raw_schema', 'raw') }}"
+    schema: coupler_internal
     tables:
       - name: tiktok_gmv_max
         description: TikTok GMV Max daily report (Coupler.io TikTok connector)
@@ -88,13 +88,3 @@ sources:
     tables:
       - name: metricool_tiktok_daily
         description: Metricool TikTok account daily metrics
-
-  # ------------------------------------------------------------------
-  # TikTok Shop / GMV Max (loaded via coupler.io)
-  # ------------------------------------------------------------------
-  - name: coupler_tiktok
-    description: TikTok Shop GMV Max campaign data loaded via coupler.io
-    schema: coupler_internal
-    tables:
-      - name: tiktok_gmv_max
-        description: Daily TikTok GMV Max campaign performance (cost, orders, revenue, ROI)

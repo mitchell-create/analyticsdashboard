@@ -10,7 +10,7 @@
 }}
 
 with source as (
-  select * from {{ source('coupler_tiktok', 'tiktok_gmv_max') }}
+    select * from {{ source('raw_coupler', 'tiktok_gmv_max') }}
 ),
 
 renamed as (

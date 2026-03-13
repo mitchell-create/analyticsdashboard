@@ -10,7 +10,7 @@
 }}
 
 with source as (
-  select * from {{ source('raw_shared', 'google_campaign') }}
+  select * from {{ source('raw_airbyte', 'account_performance_report') }}
 ),
 
 account_map as (

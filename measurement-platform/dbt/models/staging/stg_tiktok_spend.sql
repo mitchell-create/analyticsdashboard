@@ -9,7 +9,7 @@
 }}
 
 with source as (
-  select * from {{ source('raw_shared', 'tiktok_advertisers_reports_daily') }}
+    select * from {{ source('raw_airbyte', 'tiktok_advertisers_reports_daily') }}
 ),
 
 account_map as (
