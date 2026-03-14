@@ -199,9 +199,9 @@ def _fetch_via_postgres(start_date: date, end_date: date) -> dict | None:
             # --- GMV Max (TikTok Shop) — has its own revenue ---
             cur.execute(f"""
                 SELECT
-                    COALESCE(SUM(spend), 0) AS total_spend,
-                    COALESCE(SUM(revenue), 0) AS total_revenue
-                FROM {MARTS_SCHEMA}.fact_tiktok_gmvmax_daily
+                    COALESCE(SUM(cost), 0) AS total_spend,
+                    COALESCE(SUM(gross_revenue), 0) AS total_revenue
+                FROM {MARTS_SCHEMA}.fact_tiktok_gmv_max_daily
                 WHERE client_slug = 'chubble'
                   AND report_date BETWEEN %s AND %s
             """, (start_date, end_date))
