@@ -56,8 +56,8 @@ def setup_views():
     """)
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
-        SELECT client_slug, report_date, spend, orders, revenue, cost_per_order, roas
-        FROM public_marts.fact_tiktok_gmvmax_daily;
+        SELECT client_slug, report_date, cost AS spend, orders, gross_revenue AS revenue, cost_per_order, roas
+        FROM public_marts.fact_tiktok_gmv_max_daily;
     """)
 
     cur.execute("GRANT SELECT ON public.fact_spend_daily TO anon, authenticated;")
@@ -132,9 +132,9 @@ def fetch_and_post():
 
         # GMV Max
         cur.execute(f"""
-            SELECT COALESCE(SUM(spend), 0) AS total_spend,
-                   COALESCE(SUM(revenue), 0) AS total_revenue
-            FROM {MARTS_SCHEMA}.fact_tiktok_gmvmax_daily
+            SELECT COALESCE(SUM(cost), 0) AS total_spend,
+                   COALESCE(SUM(gross_revenue), 0) AS total_revenue
+            FROM {MARTS_SCHEMA}.fact_tiktok_gmv_max_daily
             WHERE client_slug = 'chubble'
               AND report_date BETWEEN %s AND %s
         """, (start_date, end_date))
