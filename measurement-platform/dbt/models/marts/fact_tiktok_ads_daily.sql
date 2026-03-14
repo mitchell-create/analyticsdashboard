@@ -1,6 +1,6 @@
--- fact_tiktok_ads_daily — Daily TikTok Ads performance with website conversions
--- Aggregates ad-level data to daily totals per client.
--- Website revenue = SUM(value_per_complete_payment * complete_payment) per ad row.
+-- fact_tiktok_ads_daily — Daily TikTok Ads WEBSITE performance
+-- Website conversions only (TikTok Pixel). Does NOT include TikTok Shop.
+-- For TikTok Shop data, see fact_tiktok_gmv_max_daily (coupler.io pipeline).
 {{
   config(
     materialized='incremental',
@@ -20,17 +20,9 @@ select
   sum(clicks) as clicks,
   sum(impressions) as impressions,
 
-  -- Website conversions (TikTok Pixel)
+  -- Website conversions (TikTok Pixel only — NOT TikTok Shop)
   sum(website_purchases) as website_purchases,
   coalesce(sum(website_revenue), 0) as website_revenue,
-
-  -- TikTok Shop / onsite
-  sum(onsite_purchases) as onsite_purchases,
-  coalesce(sum(onsite_revenue), 0) as onsite_revenue,
-
-  -- Combined
-  sum(total_conversions) as total_conversions,
-  coalesce(sum(website_revenue), 0) + coalesce(sum(onsite_revenue), 0) as total_revenue,
 
   -- Calculated rates
   case when sum(clicks) > 0 then sum(spend) / sum(clicks) else 0 end as cpc,

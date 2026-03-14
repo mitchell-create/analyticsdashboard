@@ -1,8 +1,8 @@
--- stg_tiktok_ads_conversions — Staging for TikTok Ads website conversion metrics
+-- stg_tiktok_ads_conversions — Staging for TikTok Ads WEBSITE conversion metrics
 -- Source: tiktok_ads_reports_daily (ad-level daily data)
 -- Revenue = value_per_complete_payment * complete_payment (per ad row, then summed)
--- complete_payment = website conversions (confirmed via TikTok Pixel)
--- onsite_shopping = TikTok Shop conversions (separate)
+-- complete_payment = WEBSITE conversions only (confirmed via TikTok Pixel)
+-- TikTok Shop data is in a SEPARATE pipeline: coupler.io → fact_tiktok_gmv_max_daily
 
 {{
   config(
@@ -40,7 +40,7 @@ cleaned as (
     coalesce((s.metrics->>'clicks')::numeric, 0)::bigint as clicks,
     coalesce((s.metrics->>'impressions')::numeric, 0)::bigint as impressions,
 
-    -- Website conversions (from TikTok Pixel)
+    -- Website conversions (from TikTok Pixel — does NOT include TikTok Shop)
     coalesce((s.metrics->>'complete_payment')::numeric, 0)::bigint as website_purchases,
     coalesce(
       (s.metrics->>'value_per_complete_payment')::numeric
@@ -48,10 +48,6 @@ cleaned as (
       0
     )::numeric(14, 2) as website_revenue,
     coalesce((s.metrics->>'value_per_complete_payment')::numeric(14, 2), 0) as avg_order_value,
-
-    -- TikTok Shop / onsite conversions
-    coalesce((s.metrics->>'onsite_shopping')::numeric, 0)::bigint as onsite_purchases,
-    coalesce((s.metrics->>'total_onsite_shopping_value')::numeric(14, 2), 0) as onsite_revenue,
 
     -- Combined conversions
     coalesce((s.metrics->>'conversion')::numeric, 0)::bigint as total_conversions,
