@@ -1,5 +1,6 @@
 -- stg_tiktok_spend — Staging for TikTok Ads daily spend (from Airbyte raw)
--- Adjust source table and column names to match your Airbyte TikTok connector output.
+-- Outputs account_id (advertiser_id) for joining with client_ad_accounts to assign client_slug.
+-- This covers regular TikTok ads (web conversions). GMV Max is separate (stg_chubble_tiktok_gmvmax).
 
 {{
   config(
@@ -14,6 +15,7 @@ with source as (
 
 renamed as (
   select
+    advertiser_id::text as account_id,
     date_trunc('day', (stat_time_day::date))::date as report_date,
     'tiktok' as channel,
     coalesce((metrics->>'spend')::numeric(14, 2), 0) as spend,

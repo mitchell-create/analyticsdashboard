@@ -1,5 +1,5 @@
-# dbt_project.yml — Multi-client measurement platform (Pattern B: 1 DB per client)
-# Set target in profiles.yml per client (Supabase).
+# dbt_project.yml — Multi-client measurement platform (shared DB, client_slug routing)
+# All clients share one Supabase project. client_slug differentiates data in mart tables.
 
 name: measurement_platform
 version: '1.0.0'
@@ -31,14 +31,23 @@ models:
       # Disable until Metricool (TikTok organic) is synced to raw.metricool_tiktok_daily
       stg_metricool_tiktok:
         +enabled: false
-      # Klaviyo: re-enabled now that Airbyte sync is complete
+      # Disable Klaviyo until raw.klaviyo_campaigns table is available
+      stg_klaviyo_campaigns:
+        +enabled: false
+      # TikTok paid spend: enabled with date filter (2025 only).
+      # stg_tiktok_spend.sql excludes 2026+ data due to incorrect Airbyte advertiser.
+      # Chubble: stg_chubble_tiktok_gmvmax (Coupler.io) + stg_chubble_orders (Airbyte)
     marts:
       +schema: marts
       +materialized: table
       # Depends on stg_metricool_tiktok; enable when Metricool is set up
       fact_tiktok_organic_daily:
         +enabled: false
-      # Klaviyo: re-enabled now that Airbyte sync is complete
+      # Depends on stg_klaviyo_campaigns; enable when Klaviyo source is available
+      fact_klaviyo_daily:
+        +enabled: false
+      dim_campaign:
+        +enabled: false
 
 seeds:
   measurement_platform:
@@ -49,3 +58,9 @@ seeds:
         geo_name: text
         geo_type: text
         country_code: text
+    client_ad_accounts:
+      +schema: marts
+      +column_types:
+        client_slug: text
+        platform: text
+        account_id: text

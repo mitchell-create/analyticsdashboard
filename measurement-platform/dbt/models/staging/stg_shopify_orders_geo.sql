@@ -12,7 +12,7 @@ with source as (
     created_at::date as report_date,
     coalesce(total_price::numeric(14, 2), 0) as revenue,
     upper(trim(shipping_address->>'province_code')) as province_code
-  from {{ source('raw_airbyte', 'orders') }}
+  from {{ source('raw_expand', 'expand_orders') }}
   where financial_status in ('paid', 'partially_paid')
     and shipping_address is not null
     and coalesce(shipping_address->>'country_code', '') = 'US'
