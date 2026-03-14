@@ -13,6 +13,8 @@ Connect Metabase **only** to the dbt marts schema (or public marts tables). Do n
   - `fact_kpi_geo_daily`
   - `fact_klaviyo_daily`
   - `fact_tiktok_organic_daily`
+  - `fact_tiktok_gmv_max_daily` (TikTok Shop / GMV Max)
+  - `fact_tiktok_gmv_daily` (TikTok GMV aggregated)
   - `dim_campaign`
   - `dim_geo`
   - `marketing_events` (public)
@@ -74,6 +76,22 @@ Use `marketing_events` to annotate or filter when interpreting TikTok and email 
 | Latest lift summary | Table or cards | `experiment_results` joined to `experiments` (latest result_date per experiment) | Experiment type |
 
 Connect only to `experiments` and `experiment_results`; model runner writes results there.
+
+---
+
+## Dashboard 5: GMV Max — Chellegum
+
+**Purpose:** TikTok Shop / GMV Max campaign performance for Chellegum.
+
+| Chart | Type | Data | Filters |
+|-------|------|------|--------|
+| Revenue vs cost over time | Line | `fact_tiktok_gmv_max_daily` (gross_revenue, cost) | Date range |
+| Orders by day | Line | `fact_tiktok_gmv_max_daily` (orders, active_campaigns) | Date range |
+| ROAS trend | Line | `fact_tiktok_gmv_max_daily` (roas, cost_per_order) | Date range |
+| Daily performance table | Table | `fact_tiktok_gmv_max_daily` (all metrics) | Date range |
+| Summary KPIs | Table/Cards | Aggregated totals (revenue, cost, orders, ROAS, CPO) | Date range |
+
+**Note:** All queries filter to `client_slug = 'chubble'` (Chellegum). Only Chellegum data is available for GMV Max at this time.
 
 ---
 

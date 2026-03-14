@@ -25,6 +25,11 @@ jobs:
         run: |
           pip install dbt-postgres
 
+      - name: Create CI profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          printf 'measurement_platform:\n  target: ci\n  outputs:\n    ci:\n      type: postgres\n      host: localhost\n      port: 5432\n      user: ci\n      password: ci\n      dbname: ci\n      schema: public\n      threads: 1\n' > ~/.dbt/profiles.yml
+
       - name: Install deps
         run: dbt deps
 
