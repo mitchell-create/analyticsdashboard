@@ -73,6 +73,16 @@ sources:
         description: Daily TikTok GMV Max campaign performance (cost, orders, revenue, ROI)
 
   # ------------------------------------------------------------------
+  # TikTok Ads — ad-level daily reports with conversion metrics
+  # ------------------------------------------------------------------
+  - name: raw_tiktok_ads
+    description: TikTok Ads ad-level reports from Airbyte (complete_payment, spend, etc.)
+    schema: raw
+    tables:
+      - name: tiktok_ads_reports_daily
+        description: TikTok Ads daily ad-level metrics with website conversion data
+
+  # ------------------------------------------------------------------
   # GA4 (Google Analytics 4) — all properties in shared tables
   # ------------------------------------------------------------------
   - name: raw_ga4
