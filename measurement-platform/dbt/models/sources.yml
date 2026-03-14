@@ -17,6 +17,8 @@ sources:
         description: Google Ads account performance (Airbyte)
       - name: tiktok_advertisers_reports_daily
         description: TikTok Ads daily reports (Airbyte)
+      - name: klaviyo_campaigns
+        description: Klaviyo campaign metrics (Airbyte)
 
   # ─── Expand Shopify orders (Airbyte) ───────────────────────────────────────────
   - name: raw_expand
