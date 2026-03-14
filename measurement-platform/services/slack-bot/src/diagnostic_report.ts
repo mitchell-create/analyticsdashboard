@@ -157,6 +157,7 @@ function periodCase(
 async function pullOverallKPIs(p: PeriodParams, clientSlug?: string): Promise<Metric[]> {
   const metrics: Metric[] = [];
   const dc = "report_date";
+  const clientFilter = clientSlug ? ` AND client_slug = '${clientSlug}'` : "";
 
   // Revenue & Orders
   const kpiSql = `
@@ -164,6 +165,7 @@ async function pullOverallKPIs(p: PeriodParams, clientSlug?: string): Promise<Me
       ${periodCase(dc, p, "SUM", "revenue", "revenue")},
       ${periodCase(dc, p, "SUM", "orders", "orders")}
     FROM public_marts.fact_kpi_daily
+    WHERE 1=1${clientFilter}
   `;
   const { data: kpi } = await runReadOnlyQuery(kpiSql, clientSlug);
   let curRev = 0, priRev = 0, curOrd = 0, priOrd = 0;
@@ -181,6 +183,7 @@ async function pullOverallKPIs(p: PeriodParams, clientSlug?: string): Promise<Me
     SELECT
       ${periodCase(dc, p, "SUM", "spend", "spend")}
     FROM public_marts.fact_spend_daily
+    WHERE 1=1${clientFilter}
   `;
   const { data: sp } = await runReadOnlyQuery(spendSql, clientSlug);
   if (sp?.length) {
@@ -198,6 +201,12 @@ async function pullGoogleMetrics(p: PeriodParams, clientSlug?: string): Promise<
   const metrics: Metric[] = [];
   const dc = "segments_date::date";
 
+  // Filter by client's Google account_id via client_ad_accounts mapping
+  // Cast customer_id to text to match client_ad_accounts.account_id (text type)
+  const accountFilter = clientSlug
+    ? ` WHERE g.customer_id::text IN (SELECT account_id FROM public_marts.client_ad_accounts WHERE client_slug = '${clientSlug}' AND platform = 'google')`
+    : "";
+
   const sql = `
     SELECT
       ${periodCase(dc, p, "SUM", "metrics_cost_micros::numeric / 1000000", "spend")},
@@ -205,7 +214,7 @@ async function pullGoogleMetrics(p: PeriodParams, clientSlug?: string): Promise<
       ${periodCase(dc, p, "SUM", "metrics_conversions::numeric", "conversions")},
       ${periodCase(dc, p, "SUM", "metrics_impressions::numeric", "impressions")},
       ${periodCase(dc, p, "SUM", "metrics_clicks::numeric", "clicks")}
-    FROM raw.google_account_performance_report
+    FROM raw.google_account_performance_report g${accountFilter}
   `;
 
   const { data, error } = await runReadOnlyQuery(sql, clientSlug);
@@ -239,6 +248,11 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
   const metrics: Metric[] = [];
   const dc = "date_start::date";
 
+  // Filter by client's Meta account_id via client_ad_accounts mapping
+  const accountFilter = clientSlug
+    ? ` WHERE m.account_id IN (SELECT account_id FROM public_marts.client_ad_accounts WHERE client_slug = '${clientSlug}' AND platform = 'meta')`
+    : "";
+
   const sql = `
     SELECT
       ${periodCase(dc, p, "SUM", "spend::numeric", "spend")},
@@ -246,7 +260,7 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
       ${periodCase(dc, p, "SUM", "inline_link_clicks::numeric", "clicks")},
       ${periodCase(dc, p, "SUM", "unique_inline_link_clicks::numeric", "unique_clicks")},
       ${periodCase(dc, p, "AVG", "frequency::numeric", "frequency")}
-    FROM raw.meta_ads_insights
+    FROM raw.meta_ads_insights m${accountFilter}
   `;
 
   const { data, error } = await runReadOnlyQuery(sql, clientSlug);
@@ -282,12 +296,17 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
 async function pullMetaROAS(p: PeriodParams, clientSlug?: string): Promise<Metric[]> {
   const dc = "date_start::date";
 
+  // Filter by client's Meta account_id
+  const accountWhere = clientSlug
+    ? ` AND account_id IN (SELECT account_id FROM public_marts.client_ad_accounts WHERE client_slug = '${clientSlug}' AND platform = 'meta')`
+    : "";
+
   // Attempt 1: purchase_roas column (some Airbyte configs flatten this)
   const sql1 = `
     SELECT
       ${periodCase(dc, p, "AVG", "purchase_roas::numeric", "roas")}
     FROM raw.meta_ads_insights
-    WHERE purchase_roas IS NOT NULL
+    WHERE purchase_roas IS NOT NULL${accountWhere}
   `;
   const { data: d1, error: e1 } = await runReadOnlyQuery(sql1, clientSlug);
   if (!e1 && d1?.length) {
@@ -317,7 +336,7 @@ async function pullMetaROAS(p: PeriodParams, clientSlug?: string): Promise<Metri
       SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN spend::numeric ELSE 0 END) as cur_spend,
       SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN spend::numeric ELSE 0 END) as pri_spend
     FROM raw.meta_ads_insights
-    WHERE action_values IS NOT NULL
+    WHERE action_values IS NOT NULL${accountWhere}
   `;
   const { data: d2, error: e2 } = await runReadOnlyQuery(sql2, clientSlug);
   if (!e2 && d2?.length) {
