@@ -80,6 +80,38 @@ sources:
         description: TikTok GMV Max daily report (Coupler.io TikTok connector)
 
   # ------------------------------------------------------------------
+  # GA4 (Google Analytics 4) — all properties in shared tables
+  # ------------------------------------------------------------------
+  - name: raw_ga4
+    description: GA4 data from Airbyte (all properties mixed, use property_id to filter)
+    schema: raw
+    tables:
+      - name: ga4_events_report
+        description: GA4 events with counts, users, revenue by event name
+      - name: ga4_website_overview
+        description: GA4 sessions, users, pageviews, engagement metrics
+      - name: ga4_conversions_report
+        description: GA4 conversion events with user counts and revenue
+      - name: ga4_traffic_acquisition_session_source_medium_report
+        description: GA4 sessions by source/medium
+      - name: ga4_traffic_acquisition_session_default_channel_grouping_report
+        description: GA4 sessions by channel group
+      - name: ga4_locations
+        description: GA4 sessions by geography
+      - name: ga4_devices
+        description: GA4 sessions by device category
+      - name: ga4_pages
+        description: GA4 pageviews by page path
+      - name: ga4_daily_active_users
+        description: GA4 daily active users
+      - name: ga4_traffic_sources
+        description: GA4 traffic sources
+      - name: ga4_demographic_country_report
+        description: GA4 demographics by country
+      - name: ga4_user_acquisition_first_user_source_medium_report
+        description: GA4 new user acquisition by source/medium
+
+  # ------------------------------------------------------------------
   # Optional: Metricool (TikTok organic — disabled by default)
   # ------------------------------------------------------------------
   - name: raw_metricool
