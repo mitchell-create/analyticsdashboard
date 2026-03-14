@@ -59,7 +59,7 @@ function isComparisonRequest(prompt: string): boolean {
 
 const SCHEMA_HINT = `
 Tables (use public_marts schema):
-- public_marts.fact_spend_daily (report_date, channel, spend, impressions, clicks)
+- public_marts.fact_spend_daily (report_date, channel, spend, impressions, clicks, purchase_value, roas)
 - public_marts.fact_kpi_daily (report_date, revenue, orders)
 - public_marts.fact_kpi_geo_daily (report_date, geo_id, revenue, orders)
 - public_marts.dim_geo (geo_id, geo_name, geo_type)

@@ -24,10 +24,11 @@ deployments:
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
         SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
 
-  # Chubblegum report — 1st of every month (previous month data)
-  - name: chubblegum-report-monthly
-    entrypoint: orchestration/prefect/flows/scheduled_reports.py:chubblegum_scheduled_report
-    description: "Chubblegum performance report: full previous month (posts on the 1st)"
+  # Chellegum report — 1st of every month (previous month data)
+  # Posts to #chubblegum channel (C0AEXRYPA9Y)
+  - name: chellegum-report-monthly
+    entrypoint: orchestration/prefect/flows/scheduled_reports.py:chellegum_scheduled_report
+    description: "Chellegum performance report: full previous month (posts on the 1st)"
     schedule:
       cron: "0 9 1 * *"
       timezone: "America/New_York"
@@ -36,17 +37,14 @@ deployments:
     parameters: {}
     job_variables:
       env:
-        SUPABASE_URL: "{{ $SUPABASE_URL }}"
-        SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
         SUPABASE_DB_URL: "{{ $SUPABASE_DB_URL }}"
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
-        SLACK_REPORT_CHANNEL_ID: "{{ $SLACK_REPORT_CHANNEL_ID }}"
-        SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
 
-  # Chubblegum report — 14th of every month (last 14 days)
-  - name: chubblegum-report-bimonthly
-    entrypoint: orchestration/prefect/flows/scheduled_reports.py:chubblegum_scheduled_report
-    description: "Chubblegum performance report: last 14 days (posts on the 14th)"
+  # Chellegum report — 14th of every month (last 14 days)
+  # Posts to #chubblegum channel (C0AEXRYPA9Y)
+  - name: chellegum-report-14th
+    entrypoint: orchestration/prefect/flows/scheduled_reports.py:chellegum_scheduled_report
+    description: "Chellegum performance report: last 14 days (posts on the 14th)"
     schedule:
       cron: "0 9 14 * *"
       timezone: "America/New_York"
@@ -55,9 +53,5 @@ deployments:
     parameters: {}
     job_variables:
       env:
-        SUPABASE_URL: "{{ $SUPABASE_URL }}"
-        SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
         SUPABASE_DB_URL: "{{ $SUPABASE_DB_URL }}"
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
-        SLACK_REPORT_CHANNEL_ID: "{{ $SLACK_REPORT_CHANNEL_ID }}"
-        SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
