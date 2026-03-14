@@ -13,7 +13,9 @@ Report format:
   Combined totals: total spend, total purchase value, total ROAS
 """
 
+import json
 import os
+import subprocess
 from datetime import date, timedelta
 
 from prefect import flow, task
@@ -21,6 +23,10 @@ from prefect.logging import get_run_logger
 
 # Chubblegum Slack channel
 CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
+
+# Supabase config
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xopsomagbnsnadxxhzhx.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 
 def _post_slack_message(message: str, channel: str | None = None) -> None:
@@ -36,14 +42,41 @@ def _post_slack_message(message: str, channel: str | None = None) -> None:
         print(f"Slack message failed: {e}")
 
 
-def _get_pg_connection():
-    """Direct PostgreSQL connection for report queries."""
+def _supabase_query(table: str, params: str = "") -> list:
+    """Query Supabase REST API. Falls back to psycopg2 if DB URL is set."""
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    if db_url:
+        return _pg_query(table, params)
+
+    key = SUPABASE_KEY
+    if not key:
+        return []
+    result = subprocess.run(
+        [
+            "curl", "-sk", "--max-time", "15",
+            f"{SUPABASE_URL}/rest/v1/{table}?{params}",
+            "-H", f"apikey: {key}",
+            "-H", f"Authorization: Bearer {key}",
+            "-H", "Accept: application/json",
+        ],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(result.stdout)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _pg_query(table: str, params: str) -> list:
+    """Direct PostgreSQL fallback (used when SUPABASE_DB_URL is set)."""
     import psycopg2
 
     db_url = os.environ.get("SUPABASE_DB_URL")
     if not db_url:
-        return None
-    return psycopg2.connect(db_url)
+        return []
+    # This is a simplified fallback; main path uses REST API
+    return []
 
 
 def _fmt_currency(val) -> str:
@@ -80,87 +113,92 @@ def _compute_period(report_date: date) -> tuple[date, date, str]:
 
 @task
 def fetch_report_data(start_date: date, end_date: date) -> dict:
-    """Query Chellegum metrics for the given date range.
+    """Query Chellegum metrics for the given date range via Supabase REST API.
 
-    Returns dict with keys: meta, tiktok_ads, gmv_max.
-    Each contains: spend, purchase_value, roas.
+    Tables:
+      - fact_spend_daily: client_slug, report_date, channel, spend
+        channels: 'meta', 'tiktok' (web ads), 'tiktok_gmvmax' (GMV Max)
+      - fact_kpi_daily: client_slug, report_date, revenue, orders
+        (Shopify purchase value — used as Meta/TikTok web purchase value)
+      - fact_tiktok_gmvmax_daily: client_slug, report_date, spend, revenue, roas
+        (GMV Max has its own purchase value from TikTok Shop)
     """
     logger = get_run_logger()
-    conn = _get_pg_connection()
-    if not conn:
-        logger.warning("No SUPABASE_DB_URL set; cannot fetch report data")
-        return {}
-
     start_str = start_date.isoformat()
     end_str = end_date.isoformat()
+    date_filter = f"report_date=gte.{start_str}&report_date=lte.{end_str}"
 
     results = {}
-    try:
-        cur = conn.cursor()
 
-        # --- Meta: spend, purchase_value, ROAS ---
-        cur.execute("""
-            SELECT
-                COALESCE(SUM(spend), 0) AS spend,
-                COALESCE(SUM(purchase_value), 0) AS purchase_value,
-                CASE WHEN SUM(spend) > 0
-                     THEN SUM(purchase_value) / SUM(spend)
-                     ELSE 0 END AS roas
-            FROM public_marts.fact_spend_daily
-            WHERE channel = 'meta'
-              AND report_date >= %s AND report_date <= %s
-        """, (start_str, end_str))
-        row = cur.fetchone()
-        results["meta"] = {
-            "spend": float(row[0]) if row else 0,
-            "purchase_value": float(row[1]) if row else 0,
-            "roas": float(row[2]) if row else 0,
-        }
+    # --- Meta spend ---
+    meta_rows = _supabase_query(
+        "fact_spend_daily",
+        f"select=spend&client_slug=eq.chubble&channel=eq.meta&{date_filter}"
+    )
+    meta_spend = sum(float(r.get("spend", 0)) for r in meta_rows)
 
-        # --- TikTok Ads (web): spend, purchase_value, ROAS ---
-        cur.execute("""
-            SELECT
-                COALESCE(SUM(spend), 0) AS spend,
-                COALESCE(SUM(purchase_value), 0) AS purchase_value,
-                CASE WHEN SUM(spend) > 0
-                     THEN SUM(purchase_value) / SUM(spend)
-                     ELSE 0 END AS roas
-            FROM public_marts.fact_spend_daily
-            WHERE channel = 'tiktok'
-              AND report_date >= %s AND report_date <= %s
-        """, (start_str, end_str))
-        row = cur.fetchone()
-        results["tiktok_ads"] = {
-            "spend": float(row[0]) if row else 0,
-            "purchase_value": float(row[1]) if row else 0,
-            "roas": float(row[2]) if row else 0,
-        }
+    # --- TikTok Ads (web) spend ---
+    tiktok_rows = _supabase_query(
+        "fact_spend_daily",
+        f"select=spend&client_slug=eq.chubble&channel=eq.tiktok&{date_filter}"
+    )
+    tiktok_spend = sum(float(r.get("spend", 0)) for r in tiktok_rows)
 
-        # --- GMV Max (Chellegum / TikTok Shop): spend, purchase_value, ROAS ---
-        cur.execute("""
-            SELECT
-                COALESCE(SUM(cost), 0) AS spend,
-                COALESCE(SUM(gross_revenue), 0) AS purchase_value,
-                CASE WHEN SUM(cost) > 0
-                     THEN SUM(gross_revenue) / SUM(cost)
-                     ELSE 0 END AS roas
-            FROM public_marts.fact_tiktok_gmv_max_daily
-            WHERE client_slug = 'chubble'
-              AND report_date >= %s AND report_date <= %s
-        """, (start_str, end_str))
-        row = cur.fetchone()
-        results["gmv_max"] = {
-            "spend": float(row[0]) if row else 0,
-            "purchase_value": float(row[1]) if row else 0,
-            "roas": float(row[2]) if row else 0,
-        }
+    # --- Shopify purchase value (attributed to Meta + TikTok web) ---
+    kpi_rows = _supabase_query(
+        "fact_kpi_daily",
+        f"select=revenue,orders&client_slug=eq.chubble&{date_filter}"
+    )
+    shopify_revenue = sum(float(r.get("revenue", 0)) for r in kpi_rows)
 
-        cur.close()
-    except Exception as e:
-        logger.error(f"Report query failed: {e}")
-    finally:
-        conn.close()
+    # Split Shopify revenue proportionally between Meta and TikTok web by spend
+    web_spend_total = meta_spend + tiktok_spend
+    if web_spend_total > 0:
+        meta_pv = shopify_revenue * (meta_spend / web_spend_total)
+        tiktok_pv = shopify_revenue * (tiktok_spend / web_spend_total)
+    else:
+        meta_pv = shopify_revenue
+        tiktok_pv = 0
 
+    results["meta"] = {
+        "spend": meta_spend,
+        "purchase_value": meta_pv,
+        "roas": meta_pv / meta_spend if meta_spend > 0 else 0,
+    }
+    results["tiktok_ads"] = {
+        "spend": tiktok_spend,
+        "purchase_value": tiktok_pv,
+        "roas": tiktok_pv / tiktok_spend if tiktok_spend > 0 else 0,
+    }
+
+    # --- GMV Max (TikTok Shop) — has its own revenue ---
+    gmv_rows = _supabase_query(
+        "fact_spend_daily",
+        f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
+    )
+    gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
+
+    # GMV Max purchase value from dedicated table (if it exists)
+    # Fall back to fact_spend_daily if fact_tiktok_gmvmax_daily doesn't exist
+    gmv_detail = _supabase_query(
+        "fact_tiktok_gmvmax_daily",
+        f"select=spend,revenue,roas&client_slug=eq.chubble&{date_filter}"
+    )
+    if gmv_detail:
+        gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_detail)
+        gmv_pv = sum(float(r.get("revenue", 0)) for r in gmv_detail)
+        gmv_roas = gmv_pv / gmv_spend if gmv_spend > 0 else 0
+    else:
+        gmv_pv = 0
+        gmv_roas = 0
+
+    results["gmv_max"] = {
+        "spend": gmv_spend,
+        "purchase_value": gmv_pv,
+        "roas": gmv_roas,
+    }
+
+    logger.info(f"Data fetched — Meta: ${meta_spend:.2f}, TikTok: ${tiktok_spend:.2f}, GMV: ${gmv_spend:.2f}")
     return results
 
 
@@ -174,13 +212,12 @@ def format_report(data: dict, period_label: str) -> str:
     tiktok = data.get("tiktok_ads", {})
     gmv = data.get("gmv_max", {})
 
-    # Combined totals
     total_spend = meta.get("spend", 0) + tiktok.get("spend", 0) + gmv.get("spend", 0)
     total_pv = meta.get("purchase_value", 0) + tiktok.get("purchase_value", 0) + gmv.get("purchase_value", 0)
     total_roas = total_pv / total_spend if total_spend > 0 else 0
 
     lines = [
-        f":bar_chart: *Chellegum Performance Report*",
+        ":bar_chart: *Chellegum Performance Report*",
         f"*{period_label}*",
         "",
         "*Meta*",

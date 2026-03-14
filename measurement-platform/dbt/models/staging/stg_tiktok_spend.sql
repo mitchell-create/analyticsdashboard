@@ -1,6 +1,6 @@
--- stg_tiktok_spend — Staging for TikTok Ads (web) daily spend + purchase value (from Airbyte raw)
--- Extracts spend, impressions, clicks, and purchase_value from tiktok_advertisers_reports_daily.
--- TikTok web ads purchase_value comes from metrics JSON (complete_payment_roas * spend or total_complete_payment_value).
+-- stg_tiktok_spend — Staging for TikTok Ads daily spend (from Airbyte raw)
+-- Outputs account_id (advertiser_id) for joining with client_ad_accounts to assign client_slug.
+-- This covers regular TikTok ads (web conversions). GMV Max is separate (stg_chubble_tiktok_gmvmax).
 
 {{
   config(
@@ -15,18 +15,12 @@ with source as (
 
 renamed as (
   select
+    advertiser_id::text as account_id,
     date_trunc('day', (stat_time_day::date))::date as report_date,
     'tiktok' as channel,
     coalesce((metrics->>'spend')::numeric(14, 2), 0) as spend,
     (metrics->>'impressions')::bigint as impressions,
-    (metrics->>'clicks')::bigint as clicks,
-    -- Extract purchase value from TikTok metrics JSON
-    -- Try total_complete_payment_value first, fall back to value_per_complete_payment * complete_payment
-    coalesce(
-      (metrics->>'total_complete_payment_value')::numeric(14, 2),
-      (metrics->>'complete_payment_value')::numeric(14, 2),
-      0
-    )::numeric(14, 2) as purchase_value
+    (metrics->>'clicks')::bigint as clicks
   from source
 )
 
