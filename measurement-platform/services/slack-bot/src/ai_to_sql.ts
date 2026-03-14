@@ -64,6 +64,8 @@ Tables (use public_marts schema):
 - public_marts.fact_kpi_geo_daily (report_date, geo_id, revenue, orders)
 - public_marts.dim_geo (geo_id, geo_name, geo_type)
 - public_marts.fact_tiktok_organic_daily (report_date, views, likes, comments, shares, followers)
+- public_marts.fact_tiktok_gmv_daily (report_date, gmv, orders, spend)
+- public_marts.fact_tiktok_gmv_max_daily (client_slug, report_date, active_campaigns, cost, net_cost, orders, gross_revenue, cost_per_order, roas) — filter client_slug='chubble' for Chubblegum
 - public_marts.fact_klaviyo_daily (report_date, campaign_id, sent, opens, clicks)
 - public.marketing_events (event_date, event_type, event_name)
 - public.experiments, public.experiment_results

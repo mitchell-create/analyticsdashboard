@@ -8,6 +8,8 @@ const ALLOWLISTED_TABLES = new Set([
   "fact_kpi_geo_daily",
   "fact_klaviyo_daily",
   "fact_tiktok_organic_daily",
+  "fact_tiktok_gmv_daily",
+  "fact_tiktok_gmv_max_daily",
   "dim_campaign",
   "dim_geo",
   "marketing_events",
@@ -21,6 +23,8 @@ const ALLOWLISTED_TABLES = new Set([
   "public_marts.fact_kpi_geo_daily",
   "public_marts.fact_klaviyo_daily",
   "public_marts.fact_tiktok_organic_daily",
+  "public_marts.fact_tiktok_gmv_daily",
+  "public_marts.fact_tiktok_gmv_max_daily",
   "public_marts.dim_campaign",
   "public_marts.dim_geo",
 ]);
