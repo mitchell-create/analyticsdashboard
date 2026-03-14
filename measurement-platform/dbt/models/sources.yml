@@ -24,6 +24,16 @@ sources:
       - name: klaviyo_campaigns
         description: Klaviyo campaigns (Airbyte)
 
+  # ------------------------------------------------------------------
+  # Coupler.io (TikTok GMV Max, etc.)
+  # ------------------------------------------------------------------
+  - name: raw_coupler
+    description: Raw data from Coupler.io (TikTok GMV Max)
+    schema: coupler_internal
+    tables:
+      - name: tiktok_gmv_max
+        description: TikTok GMV Max daily report (Coupler.io TikTok connector)
+
   - name: raw_metricool
     description: Raw TikTok organic metrics from Metricool
     schema: "{{ var('raw_schema', 'raw') }}"

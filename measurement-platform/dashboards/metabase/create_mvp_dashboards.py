@@ -279,6 +279,61 @@ ORDER BY e.experiment_slug""",
     },
 ]
 
+# Dashboard 5: GMV Max / TikTok Shop (Chellegum only)
+GMV_MAX_QUESTIONS = [
+    {
+        "name": "GMV Max — Revenue vs Cost (Chellegum)",
+        "sql": """SELECT report_date AS date, gross_revenue, cost
+FROM public_marts.fact_tiktok_gmv_max_daily
+WHERE client_slug = 'chubble'
+ORDER BY report_date""",
+        "display": "line",
+        "viz": {"graph.dimensions": ["date"], "graph.metrics": ["gross_revenue", "cost"]},
+    },
+    {
+        "name": "GMV Max — Orders by Day (Chellegum)",
+        "sql": """SELECT report_date AS date, orders, active_campaigns
+FROM public_marts.fact_tiktok_gmv_max_daily
+WHERE client_slug = 'chubble'
+ORDER BY report_date""",
+        "display": "line",
+        "viz": {"graph.dimensions": ["date"], "graph.metrics": ["orders"]},
+    },
+    {
+        "name": "GMV Max — ROAS Trend (Chellegum)",
+        "sql": """SELECT report_date AS date, roas, cost_per_order
+FROM public_marts.fact_tiktok_gmv_max_daily
+WHERE client_slug = 'chubble'
+ORDER BY report_date""",
+        "display": "line",
+        "viz": {"graph.dimensions": ["date"], "graph.metrics": ["roas"]},
+    },
+    {
+        "name": "GMV Max — Daily Performance (Chellegum)",
+        "sql": """SELECT report_date AS date, gross_revenue, cost, orders, roas
+FROM public_marts.fact_tiktok_gmv_max_daily
+WHERE client_slug = 'chubble'
+ORDER BY report_date""",
+        "display": "table",
+        "viz": {},
+    },
+    {
+        "name": "GMV Max — Summary KPIs (Chellegum)",
+        "sql": """SELECT
+  SUM(gross_revenue) AS total_revenue,
+  SUM(cost) AS total_cost,
+  SUM(orders) AS total_orders,
+  CASE WHEN SUM(cost) > 0 THEN ROUND(SUM(gross_revenue) / SUM(cost), 2) ELSE 0 END AS overall_roas,
+  CASE WHEN SUM(orders) > 0 THEN ROUND(SUM(cost) / SUM(orders), 2) ELSE 0 END AS avg_cost_per_order,
+  MIN(report_date) AS first_date,
+  MAX(report_date) AS last_date
+FROM public_marts.fact_tiktok_gmv_max_daily
+WHERE client_slug = 'chubble'""",
+        "display": "table",
+        "viz": {},
+    },
+]
+
 # Dashboard 2: Channel Performance (from MVP spec)
 CHANNEL_PERFORMANCE_QUESTIONS = [
     {
@@ -387,6 +442,12 @@ def main() -> int:
     # Dashboard 4: Experiment Results
     _create_dashboard_with_cards(
         headers, db_id, "Experiment Results", EXPERIMENT_RESULTS_QUESTIONS, existing_names
+    )
+    existing_names.add("Experiment Results")
+
+    # Dashboard 5: GMV Max / TikTok Shop (Chellegum)
+    _create_dashboard_with_cards(
+        headers, db_id, "GMV Max — Chellegum", GMV_MAX_QUESTIONS, existing_names
     )
 
     print("Done.")
