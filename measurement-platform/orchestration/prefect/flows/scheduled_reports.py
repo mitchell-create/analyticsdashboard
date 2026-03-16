@@ -81,11 +81,17 @@ def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
         conn.close()
 
 
-def _rest_query(table: str, params: str = "") -> list:
-    """Query Supabase REST API (public schema only)."""
+def _rest_query(table: str, params: str = "") -> list | None:
+    """Query Supabase REST API (public schema only).
+
+    Returns:
+      - list: successful query (possibly empty)
+      - None: query/auth/network failure
+    """
     key = SUPABASE_KEY
     if not key:
-        return []
+        print("Supabase REST query skipped: SUPABASE_SERVICE_KEY not set")
+        return None
     result = subprocess.run(
         [
             "curl", "-sk", "--max-time", "15",
@@ -96,11 +102,26 @@ def _rest_query(table: str, params: str = "") -> list:
         ],
         capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        print(f"Supabase REST query failed for {table}: curl exit code {result.returncode}")
+        return None
     try:
         data = json.loads(result.stdout)
-        return data if isinstance(data, list) else []
     except Exception:
-        return []
+        print(f"Supabase REST query failed for {table}: invalid JSON response")
+        return None
+
+    if isinstance(data, dict):
+        # Supabase errors are typically objects with message/code/detail fields.
+        msg = data.get("message") if isinstance(data, dict) else None
+        print(f"Supabase REST query failed for {table}: {msg or data}")
+        return None
+
+    if not isinstance(data, list):
+        print(f"Supabase REST query failed for {table}: unexpected response type {type(data).__name__}")
+        return None
+
+    return data
 
 
 def _fmt_currency(val) -> str:
@@ -237,6 +258,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.meta&{date_filter}"
     )
+    if meta_rows is None:
+        return None
     meta_spend = sum(float(r.get("spend", 0)) for r in meta_rows)
 
     # --- TikTok Ads (web) spend ---
@@ -244,6 +267,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.tiktok&{date_filter}"
     )
+    if tiktok_rows is None:
+        return None
     tiktok_spend = sum(float(r.get("spend", 0)) for r in tiktok_rows)
 
     # --- Shopify purchase value ---
@@ -251,6 +276,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_kpi_daily",
         f"select=revenue,orders&client_slug=eq.chubble&{date_filter}"
     )
+    if kpi_rows is None:
+        return None
     shopify_revenue = sum(float(r.get("revenue", 0)) for r in kpi_rows)
 
     web_spend_total = meta_spend + tiktok_spend
@@ -277,7 +304,16 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_tiktok_gmvmax_daily",
         f"select=spend,revenue,roas&client_slug=eq.chubble&{date_filter}"
     )
-    if gmv_detail:
+    if gmv_detail is None:
+        gmv_rows = _rest_query(
+            "fact_spend_daily",
+            f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
+        )
+        if gmv_rows is None:
+            return None
+        gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
+        gmv_pv = 0
+    elif gmv_detail:
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_detail)
         gmv_pv = sum(float(r.get("revenue", 0)) for r in gmv_detail)
     else:
@@ -285,6 +321,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
             "fact_spend_daily",
             f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
         )
+        if gmv_rows is None:
+            return None
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
         gmv_pv = 0
 
