@@ -196,7 +196,7 @@ Rules:
         { role: "user", content: prompt || "Ecommerce summary for the past month" },
       ],
       temperature: 0.1,
-      max_tokens: 2000,
+      max_completion_tokens: 2000,
     });
 
     const content = response.choices[0]?.message?.content?.trim();
@@ -372,7 +372,7 @@ Rules:
       model: process.env.OPENAI_SQL_MODEL || process.env.OPENAI_MODEL || "gpt-5.4",
       messages,
       temperature: 0.1,
-      max_tokens: 500,
+      max_completion_tokens: 500,
     });
 
     const content = response.choices[0]?.message?.content?.trim();

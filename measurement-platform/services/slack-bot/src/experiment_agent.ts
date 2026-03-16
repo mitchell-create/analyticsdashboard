@@ -491,7 +491,7 @@ Rules:
       model: process.env.OPENAI_MODEL || "gpt-5.4",
       messages,
       temperature: 0,
-      max_tokens: 300,
+      max_completion_tokens: 300,
     });
 
     const content = response.choices[0]?.message?.content?.trim();
@@ -1190,7 +1190,7 @@ You are chatting in Slack, not writing a blog post or textbook. Follow these rul
       model: process.env.OPENAI_MODEL || "gpt-5.4",
       messages,
       temperature: 0.3,
-      max_tokens: 1200,
+      max_completion_tokens: 1200,
     });
 
     return response.choices[0]?.message?.content?.trim() || "I couldn't generate guidance. Try `/geolift help` for available commands.";
