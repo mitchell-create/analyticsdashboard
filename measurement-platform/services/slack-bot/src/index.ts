@@ -154,7 +154,10 @@ app.message(async ({ message, say }) => {
     let reply: string;
 
     if (isDiagnosticReportRequest(cleanedText)) {
-      reply = await generateDiagnosticReport(cleanedText, options);
+      reply = await generateDiagnosticReport(cleanedText, {
+        ...options,
+        clientDisplayName: client?.displayName,
+      });
     } else if (isExperimentQuery(cleanedText) || threadIsExperiment) {
       // For analysis requests (running the R model), use async posting so the user
       // gets an immediate acknowledgment and results are posted when ready.
@@ -261,7 +264,10 @@ app.command("/analytics", async ({ command, ack, say }) => {
   try {
     let reply: string;
     if (isDiagnosticReportRequest(cleanedText)) {
-      reply = await generateDiagnosticReport(cleanedText, cmdOptions);
+      reply = await generateDiagnosticReport(cleanedText, {
+        ...cmdOptions,
+        clientDisplayName: client?.displayName,
+      });
     } else {
       const result = await answerQuery(cleanedText, cmdOptions);
       reply = result.text;

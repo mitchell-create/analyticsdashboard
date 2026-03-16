@@ -37,6 +37,7 @@ const ALLOWLISTED_TABLES = new Set([
   "public.pipeline_runs",
   // raw schema (Airbyte source tables — read-only analytics)
   "meta_ads_insights",
+  "meta_customaccount_insights_daily",
   "ads_insights_region",
   "google_account_performance_report",
   "account_performance_report",
@@ -44,6 +45,7 @@ const ALLOWLISTED_TABLES = new Set([
   "orders",
   "klaviyo_campaigns",
   "raw.meta_ads_insights",
+  "raw.meta_customaccount_insights_daily",
   "raw.ads_insights_region",
   "raw.google_account_performance_report",
   "raw.account_performance_report",

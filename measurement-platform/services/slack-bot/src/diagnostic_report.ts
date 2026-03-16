@@ -248,7 +248,7 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
   const metrics: Metric[] = [];
   const dc = "date_start::date";
 
-  // Filter by client's Meta account_id via client_ad_accounts mapping
+  // Use account-level data for accurate totals
   const accountFilter = clientSlug
     ? ` WHERE m.account_id IN (SELECT account_id FROM public_marts.client_ad_accounts WHERE client_slug = '${clientSlug}' AND platform = 'meta')`
     : "";
@@ -260,7 +260,7 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
       ${periodCase(dc, p, "SUM", "inline_link_clicks::numeric", "clicks")},
       ${periodCase(dc, p, "SUM", "unique_inline_link_clicks::numeric", "unique_clicks")},
       ${periodCase(dc, p, "AVG", "frequency::numeric", "frequency")}
-    FROM raw.meta_ads_insights m${accountFilter}
+    FROM raw.meta_customaccount_insights_daily m${accountFilter}
   `;
 
   const { data, error } = await runReadOnlyQuery(sql, clientSlug);
@@ -285,72 +285,49 @@ async function pullMetaMetrics(p: PeriodParams, clientSlug?: string): Promise<Me
   metrics.push(metric("Meta Impressions", curImp, priImp, "number", "up-good", "meta"));
   metrics.push(metric("Meta Link Clicks", curCl, priCl, "number", "up-good", "meta"));
 
+  // Pull Meta actions: purchases, add to carts, checkouts, purchase value
+  const actionsSql = `
+    SELECT
+      SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_purchase') ELSE 0 END) AS cur_purchases,
+      SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_purchase') ELSE 0 END) AS pri_purchases,
+      SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_add_to_cart') ELSE 0 END) AS cur_atc,
+      SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_add_to_cart') ELSE 0 END) AS pri_atc,
+      SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_initiated_checkout') ELSE 0 END) AS cur_checkouts,
+      SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.actions) elem WHERE elem->>'action_type' = 'omni_initiated_checkout') ELSE 0 END) AS pri_checkouts,
+      SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.action_values) elem WHERE elem->>'action_type' = 'omni_purchase') ELSE 0 END) AS cur_pv,
+      SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN
+        (SELECT COALESCE(SUM((elem->>'value')::numeric), 0) FROM jsonb_array_elements(m.action_values) elem WHERE elem->>'action_type' = 'omni_purchase') ELSE 0 END) AS pri_pv
+    FROM raw.meta_customaccount_insights_daily m${accountFilter}
+  `;
+
+  const { data: actData, error: actError } = await runReadOnlyQuery(actionsSql, clientSlug);
+  if (!actError && actData?.length) {
+    const a = actData[0] as Record<string, unknown>;
+    const curPurch = num(a, "cur_purchases"), priPurch = num(a, "pri_purchases");
+    const curATC = num(a, "cur_atc"), priATC = num(a, "pri_atc");
+    const curCheckout = num(a, "cur_checkouts"), priCheckout = num(a, "pri_checkouts");
+    const curPV = num(a, "cur_pv"), priPV = num(a, "pri_pv");
+
+    metrics.push(metric("Meta Purchases", curPurch, priPurch, "number", "up-good", "meta"));
+    metrics.push(metric("Meta Purchase Value", curPV, priPV, "currency", "up-good", "meta"));
+    metrics.push(metric("Meta ROAS", curSpend > 0 ? curPV / curSpend : 0, priSpend > 0 ? priPV / priSpend : 0, "roas", "up-good", "meta"));
+    metrics.push(metric("Meta AOV", curPurch > 0 ? curPV / curPurch : 0, priPurch > 0 ? priPV / priPurch : 0, "currency", "up-good", "meta"));
+    metrics.push(metric("Meta Add to Carts", curATC, priATC, "number", "up-good", "meta"));
+    metrics.push(metric("Meta Checkouts", curCheckout, priCheckout, "number", "up-good", "meta"));
+    metrics.push(metric("Meta CVR", curCl > 0 ? (curPurch / curCl) * 100 : 0, priCl > 0 ? (priPurch / priCl) * 100 : 0, "percent", "up-good", "meta"));
+  }
+
   return metrics;
 }
 
-/**
- * Try to pull Meta ROAS from raw table.
- * Meta Ads Insights may have a `purchase_roas` column depending on Airbyte config.
- * Fails gracefully if the column doesn't exist.
- */
-async function pullMetaROAS(p: PeriodParams, clientSlug?: string): Promise<Metric[]> {
-  const dc = "date_start::date";
-
-  // Filter by client's Meta account_id
-  const accountWhere = clientSlug
-    ? ` AND account_id IN (SELECT account_id FROM public_marts.client_ad_accounts WHERE client_slug = '${clientSlug}' AND platform = 'meta')`
-    : "";
-
-  // Attempt 1: purchase_roas column (some Airbyte configs flatten this)
-  const sql1 = `
-    SELECT
-      ${periodCase(dc, p, "AVG", "purchase_roas::numeric", "roas")}
-    FROM raw.meta_ads_insights
-    WHERE purchase_roas IS NOT NULL${accountWhere}
-  `;
-  const { data: d1, error: e1 } = await runReadOnlyQuery(sql1, clientSlug);
-  if (!e1 && d1?.length) {
-    const r = d1[0] as Record<string, unknown>;
-    const curR = num(r, "cur_roas"), priR = num(r, "pri_roas");
-    if (curR > 0 || priR > 0) {
-      return [metric("Meta ROAS", curR, priR, "roas", "up-good", "meta")];
-    }
-  }
-
-  // Attempt 2: calculate from action_values JSON (common Airbyte format)
-  // action_values is a JSONB array: [{"action_type":"omni_purchase","value":"123.45"},...]
-  const sql2 = `
-    SELECT
-      SUM(CASE
-        WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}'
-        THEN (SELECT SUM((elem->>'value')::numeric)
-              FROM jsonb_array_elements(action_values::jsonb) AS elem
-              WHERE elem->>'action_type' LIKE '%purchase%')
-        ELSE 0 END) as cur_purchase_value,
-      SUM(CASE
-        WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}'
-        THEN (SELECT SUM((elem->>'value')::numeric)
-              FROM jsonb_array_elements(action_values::jsonb) AS elem
-              WHERE elem->>'action_type' LIKE '%purchase%')
-        ELSE 0 END) as pri_purchase_value,
-      SUM(CASE WHEN ${dc} >= '${p.currentStart}' AND ${dc} < '${p.currentEnd}' THEN spend::numeric ELSE 0 END) as cur_spend,
-      SUM(CASE WHEN ${dc} >= '${p.priorStart}' AND ${dc} < '${p.priorEnd}' THEN spend::numeric ELSE 0 END) as pri_spend
-    FROM raw.meta_ads_insights
-    WHERE action_values IS NOT NULL${accountWhere}
-  `;
-  const { data: d2, error: e2 } = await runReadOnlyQuery(sql2, clientSlug);
-  if (!e2 && d2?.length) {
-    const r = d2[0] as Record<string, unknown>;
-    const curPV = num(r, "cur_purchase_value"), priPV = num(r, "pri_purchase_value");
-    const curS = num(r, "cur_spend"), priS = num(r, "pri_spend");
-    if (curPV > 0 || priPV > 0) {
-      return [metric("Meta ROAS", curS > 0 ? curPV / curS : 0, priS > 0 ? priPV / priS : 0, "roas", "up-good", "meta")];
-    }
-  }
-
-  // No Meta ROAS data available — that's OK, the overall MER covers blended ROAS
-  return [];
-}
+// Meta ROAS is now calculated directly in pullMetaMetrics using account-level action_values
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
 
@@ -391,6 +368,7 @@ function fmtMetric(m: Metric): string {
 async function generateNarrative(
   metrics: Metric[],
   period: PeriodParams,
+  clientDisplayName?: string,
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -408,31 +386,48 @@ async function generateNarrative(
     ? significant.map((m) => `${m.name}: ${m.change >= 0 ? "+" : ""}${m.change.toFixed(1)}%`).join(", ")
     : "No significant changes (all metrics within ±5%)";
 
-  const sysPrompt = `You are an expert performance marketing analyst writing a monthly diagnostic report for an e-commerce brand.
+  const brandName = clientDisplayName || "the brand";
 
-Your job:
-1. Summarize overall performance in 2–3 sentences.
-2. Identify the biggest movers and explain WHY they likely changed using cause-and-effect reasoning from the metrics.
-3. Call out concerning trends or standout wins.
-4. Provide 3–5 specific, actionable strategy recommendations.
+  const sysPrompt = `You are an expert performance marketing analyst writing a detailed monthly performance report for an e-commerce brand called ${brandName}.
 
-Diagnostic reasoning patterns:
-- ROAS dropped + CPC increased + CTR dropped → ad relevance declining, likely creative fatigue
-- CTR dropped + frequency increased → audience saturation, too many impressions per user
-- Conversions dropped + clicks stable → landing page or checkout issue
-- Impressions increased + CTR dropped → audience expansion diluting quality
-- CPA increased + conversion rate dropped → either traffic quality or offer/landing page issue
-- If Meta frequency > 2.5, flag creative fatigue and recommend new creatives
-- If Google CVR dropped but clicks increased, check for keyword quality issues
+Write a DETAILED WRITTEN REPORT in the following structure. This is a report that will be shared with the client — it should be professional, specific, and insightful.
 
-Rules:
-- Be concise and direct, no fluff or filler.
-- Support every claim with data.
-- Strategy recommendations must be specific: "Launch 3–5 new Meta ad creatives to combat frequency of X.X" not "improve ads".
-- Keep the entire response under 350 words.
-- Do NOT use emoji — the metric lines already have emoji.
-- Write in plain text, not markdown (no **, no ##, no bullets).
-- Use short paragraphs separated by blank lines.`;
+REPORT STRUCTURE:
+
+1. TITLE LINE: "${brandName} - [Current Month Year]"
+
+2. NOTES ON RESULTS: Start with 1-2 sentences on overall revenue performance (up/down X% compared to prior month).
+
+3. GOOGLE SECTION: "Google: Comparing [Current Month] to [Prior Month]"
+   For each Google metric, write one line in this exact format:
+   "[Metric Name] is [+/-X.XX%] [Up/Down] from [prior value] to [current value]"
+
+   Include ALL of these metrics: Spend, ROAS By Click, Conversions, Conversion Value, Cost per Conversion, Conversion Rate, Impressions, Clicks, CTR, CPC.
+
+   After the metrics, write 1-2 paragraphs of analysis explaining WHY the numbers moved the way they did. Reference specific metrics to support your reasoning. End with whether the channel is healthy or needs attention.
+
+4. FACEBOOK/META SECTION: "Facebook: [Current Month] Performance Report"
+   Write the same detailed metric lines for Meta: Spend, ROAS, Purchases, Purchase Value, AOV, CPM, Link CTR, Unique CTR, Frequency, CPC, Add to Carts, Checkouts, CVR, Impressions, Link Clicks.
+
+   After the metrics, write 1-2 paragraphs of analysis. Comment on creative performance, audience saturation (frequency), retargeting vs prospecting balance, and what's working.
+
+5. STRATEGY & PLAN GOING FORWARD:
+   Provide 3-5 specific, actionable bullet points for next steps. Be concrete: "Test 3-5 new UGC mashup videos" not "improve creatives". Reference the data to justify each recommendation.
+
+RULES:
+- Write the FULL metric lines for every metric — do not skip any.
+- Use actual numbers from the data provided — do not make up numbers.
+- Each metric line must show the % change, direction (Up/Down), prior value, and current value.
+- The analysis paragraphs should explain cause-and-effect, not just restate numbers.
+- Diagnostic patterns to apply:
+  * ROAS↓ + CPC↑ + CTR↓ → creative fatigue
+  * CTR↓ + frequency↑ → audience saturation
+  * Conversions↓ + clicks stable → landing page or checkout issue
+  * Impressions↑ + CTR↓ → audience expansion diluting quality
+  * Meta frequency > 2.5 → flag creative fatigue
+- Do NOT use emoji or markdown formatting (no **, no ##).
+- Use plain text only. Use line breaks between sections.
+- Be thorough — this report should be 600-1000 words.`;
 
   const userPrompt = `Monthly performance data — ${period.label}:
 
@@ -440,7 +435,7 @@ ${metricLines}
 
 BIGGEST MOVERS (>5% change): ${sigLines}
 
-Write the diagnostic analysis and strategy recommendations.`;
+Write the full detailed performance report.`;
 
   try {
     const client = new OpenAI({ apiKey });
@@ -451,7 +446,7 @@ Write the diagnostic analysis and strategy recommendations.`;
         { role: "user", content: userPrompt },
       ],
       temperature: 0.3,
-      max_tokens: 900,
+      max_tokens: 3000,
     });
     return res.choices[0]?.message?.content?.trim() || "Could not generate analysis.";
   } catch (err) {
@@ -476,12 +471,17 @@ export function isDiagnosticReportRequest(prompt: string): boolean {
     "marketing report",
     "generate report",
     "create report",
+    "make a report",
+    "make report",
     "full report",
     "channel report",
+    "written report",
     "how did",
     "how were",
     "how was",
     "report for",
+    "report that looks",
+    "notes on results",
   ];
   return phrases.some((p) => lower.includes(p));
 }
@@ -491,60 +491,29 @@ export function isDiagnosticReportRequest(prompt: string): boolean {
  */
 export async function generateDiagnosticReport(
   prompt: string,
-  options: { userId?: string; channelId?: string; clientSlug?: string },
+  options: { userId?: string; channelId?: string; clientSlug?: string; clientDisplayName?: string },
 ): Promise<string> {
   const period = parseReportPeriod(prompt);
 
-  // Pull all metric groups in parallel
-  const [overallMetrics, googleMetrics, metaMetrics, metaROAS] = await Promise.all([
+  // Pull all metric groups in parallel (Meta ROAS now included in pullMetaMetrics)
+  const [overallMetrics, googleMetrics, metaMetrics] = await Promise.all([
     pullOverallKPIs(period, options.clientSlug),
     pullGoogleMetrics(period, options.clientSlug),
     pullMetaMetrics(period, options.clientSlug),
-    pullMetaROAS(period, options.clientSlug),
   ]);
 
-  // Merge Meta ROAS into meta metrics (insert after Meta Spend if available)
-  const mergedMeta = [...metaMetrics];
-  if (metaROAS.length > 0) {
-    const spendIdx = mergedMeta.findIndex((m) => m.name === "Meta Spend");
-    mergedMeta.splice(spendIdx + 1, 0, ...metaROAS);
-  }
-
-  const allMetrics = [...overallMetrics, ...googleMetrics, ...mergedMeta];
+  const allMetrics = [...overallMetrics, ...googleMetrics, ...metaMetrics];
 
   if (allMetrics.length === 0) {
     return "No data available for the requested period. Verify that `fact_kpi_daily` and `fact_spend_daily` have data.";
   }
 
-  // ── Build the formatted report ──
-  const sections: string[] = [];
-  sections.push(`*📊 Diagnostic Report — ${period.label}*\n`);
+  // Resolve display name for the report title
+  const displayName = options.clientDisplayName
+    || (options.clientSlug ? options.clientSlug.charAt(0).toUpperCase() + options.clientSlug.slice(1) : "Client");
 
-  // Overall KPIs
-  const overall = allMetrics.filter((m) => m.section === "overall");
-  if (overall.length) {
-    sections.push("*── Overall Performance ──*");
-    sections.push(overall.map(fmtMetric).join("\n"));
-  }
-
-  // Google Ads
-  const google = allMetrics.filter((m) => m.section === "google");
-  if (google.length) {
-    sections.push("\n*── Google Ads ──*");
-    sections.push(google.map(fmtMetric).join("\n"));
-  }
-
-  // Meta (Facebook / Instagram)
-  const meta = allMetrics.filter((m) => m.section === "meta");
-  if (meta.length) {
-    sections.push("\n*── Meta (Facebook / Instagram) ──*");
-    sections.push(meta.map(fmtMetric).join("\n"));
-  }
-
-  // AI narrative analysis
-  const narrative = await generateNarrative(allMetrics, period);
-  sections.push("\n*── Analysis & Strategy ──*");
-  sections.push(narrative);
+  // Generate the full written narrative report (replaces emoji metric lines)
+  const narrative = await generateNarrative(allMetrics, period, displayName);
 
   // Audit
   await logQueryAudit(
@@ -554,11 +523,11 @@ export async function generateDiagnosticReport(
       client_slug: options.clientSlug,
       prompt: `[Diagnostic Report] ${period.label}`,
       sql_executed: "[multi-query diagnostic report]",
-      table_used: "fact_kpi_daily, fact_spend_daily, google_account_performance_report, meta_ads_insights",
+      table_used: "fact_kpi_daily, fact_spend_daily, google_account_performance_report, meta_customaccount_insights_daily",
       row_count: allMetrics.length,
     },
     options.clientSlug,
   );
 
-  return sections.join("\n");
+  return narrative;
 }
