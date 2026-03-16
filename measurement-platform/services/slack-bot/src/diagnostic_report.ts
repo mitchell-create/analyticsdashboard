@@ -446,7 +446,7 @@ Write the full detailed performance report.`;
         { role: "user", content: userPrompt },
       ],
       temperature: 0.3,
-      max_tokens: 3000,
+      max_completion_tokens: 3000,
     });
     return res.choices[0]?.message?.content?.trim() || "Could not generate analysis.";
   } catch (err) {
