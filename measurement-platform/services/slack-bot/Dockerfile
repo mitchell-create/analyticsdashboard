@@ -17,7 +17,6 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist/ ./dist/
-COPY clients.json ./
 
 ENV NODE_ENV=production
 

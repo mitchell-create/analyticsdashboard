@@ -16,10 +16,31 @@ export interface ClientConfig {
 
 const clients: Map<string, ClientConfig> = new Map();
 
-/** Load client registry from JSON file, or fall back to a single "default" client from env vars. */
+/** Load client registry from CLIENTS_JSON env var, JSON file, or fall back to single-client mode. */
 export function loadClientRegistry(): void {
   clients.clear();
 
+  // Priority 1: CLIENTS_JSON env var (for Docker/Railway where file isn't in git)
+  const envJson = process.env.CLIENTS_JSON;
+  if (envJson) {
+    try {
+      const entries: ClientConfig[] = JSON.parse(envJson);
+      for (const entry of entries) {
+        if (entry.slug && entry.dbUrl) {
+          clients.set(entry.slug.toLowerCase(), {
+            ...entry,
+            slug: entry.slug.toLowerCase(),
+          });
+        }
+      }
+      console.log(`  Client registry loaded from CLIENTS_JSON env var (${clients.size} clients)`);
+      return;
+    } catch (e) {
+      console.error("Failed to parse CLIENTS_JSON env var:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  // Priority 2: JSON file on disk
   const registryPath =
     process.env.CLIENT_REGISTRY_PATH ||
     path.join(process.cwd(), "clients.json");
@@ -35,6 +56,7 @@ export function loadClientRegistry(): void {
         });
       }
     }
+    console.log(`  Client registry loaded from ${registryPath} (${clients.size} clients)`);
     return;
   }
 
@@ -50,6 +72,7 @@ export function loadClientRegistry(): void {
       supabaseServiceKey: key,
       dbUrl,
     });
+    console.log("  Client registry: single-client mode from env vars");
   }
 }
 
