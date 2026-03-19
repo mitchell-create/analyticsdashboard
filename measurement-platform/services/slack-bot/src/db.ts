@@ -7,6 +7,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { Client as PgClient } from "pg";
 
 let supabaseClient: SupabaseClient | null = null;
+const READ_ONLY_QUERY_TIMEOUT_MS = 15_000;
 
 export function getSupabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
@@ -54,6 +55,7 @@ export async function runReadOnlyQuery(
   });
   try {
     await pg.connect();
+    await pg.query(`SET statement_timeout = ${READ_ONLY_QUERY_TIMEOUT_MS}`);
     const res = await pg.query(sql);
     return { data: res.rows as unknown[], error: null };
   } catch (e) {
