@@ -34,17 +34,38 @@ const FORBIDDEN_PATTERNS = [
   /(\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b|\bcreate\b|\balter\b|\btruncate\b|\bgrant\b|\brevoke\b)/i,
 ];
 
+const FORBIDDEN_FUNCTION_PATTERNS = [
+  /\bpg_sleep\s*\(/i,
+  /\bpg_terminate_backend\s*\(/i,
+  /\bpg_cancel_backend\s*\(/i,
+  /\bpg_read_file\s*\(/i,
+  /\bpg_ls_dir\s*\(/i,
+  /\bpg_stat_file\s*\(/i,
+  /\bdblink\s*\(/i,
+];
+
 /**
  * Returns true if the SQL is allowed (SELECT only, allowlisted tables).
  */
 export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string } {
-  const normalized = sql.trim().toLowerCase();
+  const trimmed = sql.trim();
+  const normalized = trimmed.toLowerCase();
   if (!normalized.startsWith("select ")) {
     return { allowed: false, reason: "Only SELECT queries are allowed" };
+  }
+  // Block multi-statement SQL while allowing an optional trailing semicolon.
+  const withoutTrailingSemicolon = trimmed.replace(/;\s*$/, "");
+  if (withoutTrailingSemicolon.includes(";")) {
+    return { allowed: false, reason: "Multiple statements are not allowed" };
   }
   for (const re of FORBIDDEN_PATTERNS) {
     if (re.test(sql)) {
       return { allowed: false, reason: "Query contains forbidden statement" };
+    }
+  }
+  for (const re of FORBIDDEN_FUNCTION_PATTERNS) {
+    if (re.test(sql)) {
+      return { allowed: false, reason: "Query contains forbidden function" };
     }
   }
   // Extract table names from FROM and JOIN (simple heuristic)
@@ -53,6 +74,9 @@ export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string }
   const tables = [...(fromMatch || []), ...(joinMatch || [])].map((s) =>
     s.replace(/\b(from|join)\s+/i, "").trim().replace(/^["']?([^."']+)/, "$1")
   );
+  if (tables.length === 0) {
+    return { allowed: false, reason: "Query must reference at least one allowlisted table" };
+  }
   for (const t of tables) {
     const base = t.split(".").pop() ?? t;
     if (!ALLOWLISTED_TABLES.has(base) && !ALLOWLISTED_TABLES.has(t)) {
