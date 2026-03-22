@@ -60,7 +60,11 @@ def _get_pg_connection():
     db_url = os.environ.get("SUPABASE_DB_URL")
     if not db_url:
         return None
-    return psycopg2.connect(db_url, connect_timeout=15)
+    try:
+        return psycopg2.connect(db_url, connect_timeout=15)
+    except Exception as e:
+        print(f"PostgreSQL connection failed: {e}")
+        return None
 
 
 def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
