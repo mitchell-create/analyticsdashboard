@@ -19,9 +19,9 @@ Multi-client measurement platform: Airbyte + Metricool -> Supabase -> dbt -> Met
 - **Slack Bot**: http://localhost:3001 (use ngrok for Slack events)
 
 ## Browser Access
-This repo is configured with Playwright MCP (`.mcp.json`) so Claude Code can:
-- Navigate to and interact with Metabase dashboards
-- Monitor Prefect flow runs in the Prefect UI
+Use the Google Chrome browser integration (not Playwright) to:
+- Navigate to and interact with Metabase dashboards at http://localhost:3000
+- Monitor Prefect flow runs in the Prefect UI at http://localhost:4200
 - Access any local web service running on localhost
 
 ## Commands
