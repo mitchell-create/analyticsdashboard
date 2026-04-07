@@ -34,6 +34,22 @@ const FORBIDDEN_PATTERNS = [
   /(\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b|\bcreate\b|\balter\b|\btruncate\b|\bgrant\b|\brevoke\b)/i,
 ];
 
+const FORBIDDEN_FUNCTIONS = [
+  "query_to_xml",
+  "query_to_xmlschema",
+  "query_to_json",
+  "dblink",
+  "pg_sleep",
+  "pg_read_file",
+  "pg_read_binary_file",
+  "pg_ls_dir",
+  "pg_terminate_backend",
+  "pg_cancel_backend",
+  "lo_export",
+  "lo_import",
+  "set_config",
+];
+
 /**
  * Returns true if the SQL is allowed (SELECT only, allowlisted tables).
  */
@@ -47,12 +63,24 @@ export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string }
       return { allowed: false, reason: "Query contains forbidden statement" };
     }
   }
+  // Block known dangerous function calls that can execute dynamic SQL,
+  // leak server data, or cause denial-of-service.
+  const normalizedSql = sql.toLowerCase();
+  for (const fn of FORBIDDEN_FUNCTIONS) {
+    const fnPattern = new RegExp(`\\b${fn}\\s*\\(`, "i");
+    if (fnPattern.test(normalizedSql)) {
+      return { allowed: false, reason: `Forbidden function call: ${fn}` };
+    }
+  }
   // Extract table names from FROM and JOIN (simple heuristic)
   const fromMatch = sql.match(/\bfrom\s+([\w."]+)/gi);
   const joinMatch = sql.match(/\bjoin\s+([\w."]+)/gi);
   const tables = [...(fromMatch || []), ...(joinMatch || [])].map((s) =>
     s.replace(/\b(from|join)\s+/i, "").trim().replace(/^["']?([^."']+)/, "$1")
   );
+  if (tables.length === 0) {
+    return { allowed: false, reason: "Query must reference allowlisted tables" };
+  }
   for (const t of tables) {
     const base = t.split(".").pop() ?? t;
     if (!ALLOWLISTED_TABLES.has(base) && !ALLOWLISTED_TABLES.has(t)) {
