@@ -12,13 +12,15 @@ Report format:
     - GMV Max (TikTok Shop)
   Combined totals: total spend, total purchase value, total ROAS
 
-Data sources (public_marts schema, populated by dbt):
+Data sources:
   - fact_spend_daily: client_slug, report_date, channel, spend
     channels: 'meta', 'tiktok' (web ads), 'tiktok_gmvmax' (GMV Max)
   - fact_kpi_daily: client_slug, report_date, revenue, orders
     (Shopify purchase value — attributed proportionally to Meta/TikTok web)
-  - fact_tiktok_gmvmax_daily: client_slug, report_date, spend, revenue, roas
-    (GMV Max has its own purchase value from TikTok Shop)
+  - PostgreSQL path: public_marts.fact_tiktok_gmv_max_daily
+    columns used: cost (spend), gross_revenue (purchase value)
+  - REST fallback path: public.fact_tiktok_gmvmax_daily view
+    columns used: spend, revenue, roas
 """
 
 import json
@@ -287,6 +289,12 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         )
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
         gmv_pv = 0
+
+    # Fail safe: avoid silently posting incorrect GMV ROAS when detail rows
+    # are unavailable but spend exists (usually missing/misconfigured view).
+    if gmv_spend > 0 and not gmv_detail:
+        print("REST fallback incomplete: GMV spend found but GMV revenue rows missing")
+        return None
 
     gmv_roas = gmv_pv / gmv_spend if gmv_spend > 0 else 0
     results["gmv_max"] = {
