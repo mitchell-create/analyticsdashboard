@@ -81,14 +81,17 @@ def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
         conn.close()
 
 
-def _rest_query(table: str, params: str = "") -> list:
-    """Query Supabase REST API (public schema only)."""
+def _rest_query(table: str, params: str = "") -> tuple[list, bool]:
+    """Query Supabase REST API (public schema only).
+
+    Returns (rows, ok), where ok=False indicates an auth/transport/parse failure.
+    """
     key = SUPABASE_KEY
     if not key:
-        return []
+        return [], False
     result = subprocess.run(
         [
-            "curl", "-sk", "--max-time", "15",
+            "curl", "-sSfk", "--max-time", "15",
             f"{SUPABASE_URL}/rest/v1/{table}?{params}",
             "-H", f"apikey: {key}",
             "-H", f"Authorization: Bearer {key}",
@@ -96,11 +99,18 @@ def _rest_query(table: str, params: str = "") -> list:
         ],
         capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        print(f"REST query failed for {table}: {result.stderr.strip()}")
+        return [], False
     try:
         data = json.loads(result.stdout)
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return data, True
+        print(f"REST query returned non-list payload for {table}")
+        return [], False
     except Exception:
-        return []
+        print(f"REST query returned invalid JSON for {table}")
+        return [], False
 
 
 def _fmt_currency(val) -> str:
@@ -233,24 +243,30 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
     results = {}
 
     # --- Meta spend ---
-    meta_rows = _rest_query(
+    meta_rows, ok = _rest_query(
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.meta&{date_filter}"
     )
+    if not ok:
+        return None
     meta_spend = sum(float(r.get("spend", 0)) for r in meta_rows)
 
     # --- TikTok Ads (web) spend ---
-    tiktok_rows = _rest_query(
+    tiktok_rows, ok = _rest_query(
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.tiktok&{date_filter}"
     )
+    if not ok:
+        return None
     tiktok_spend = sum(float(r.get("spend", 0)) for r in tiktok_rows)
 
     # --- Shopify purchase value ---
-    kpi_rows = _rest_query(
+    kpi_rows, ok = _rest_query(
         "fact_kpi_daily",
         f"select=revenue,orders&client_slug=eq.chubble&{date_filter}"
     )
+    if not ok:
+        return None
     shopify_revenue = sum(float(r.get("revenue", 0)) for r in kpi_rows)
 
     web_spend_total = meta_spend + tiktok_spend
@@ -273,18 +289,20 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
     }
 
     # --- GMV Max ---
-    gmv_detail = _rest_query(
+    gmv_detail, gmv_detail_ok = _rest_query(
         "fact_tiktok_gmvmax_daily",
         f"select=spend,revenue,roas&client_slug=eq.chubble&{date_filter}"
     )
-    if gmv_detail:
+    if gmv_detail_ok and gmv_detail:
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_detail)
         gmv_pv = sum(float(r.get("revenue", 0)) for r in gmv_detail)
     else:
-        gmv_rows = _rest_query(
+        gmv_rows, ok = _rest_query(
             "fact_spend_daily",
             f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
         )
+        if not ok:
+            return None
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
         gmv_pv = 0
 
