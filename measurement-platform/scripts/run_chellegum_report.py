@@ -41,8 +41,47 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    # Guard against irreversible data loss when legacy public tables still contain rows.
+    cur.execute("""
+        DO $$
+        DECLARE has_rows boolean;
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relname = 'fact_spend_daily'
+                  AND c.relkind = 'r'
+            ) THEN
+                SELECT EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1) INTO has_rows;
+                IF has_rows THEN
+                    RAISE EXCEPTION 'Refusing to replace public.fact_spend_daily: table contains data. Migrate data before running --setup-views.';
+                END IF;
+                DROP TABLE public.fact_spend_daily CASCADE;
+            END IF;
+        END $$;
+    """)
+    cur.execute("""
+        DO $$
+        DECLARE has_rows boolean;
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relname = 'fact_kpi_daily'
+                  AND c.relkind = 'r'
+            ) THEN
+                SELECT EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1) INTO has_rows;
+                IF has_rows THEN
+                    RAISE EXCEPTION 'Refusing to replace public.fact_kpi_daily: table contains data. Migrate data before running --setup-views.';
+                END IF;
+                DROP TABLE public.fact_kpi_daily CASCADE;
+            END IF;
+        END $$;
+    """)
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
