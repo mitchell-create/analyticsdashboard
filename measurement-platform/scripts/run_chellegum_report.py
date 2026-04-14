@@ -13,6 +13,9 @@ Usage:
   # Or with --setup-views to create public schema views first:
   python3 scripts/run_chellegum_report.py --setup-views
 
+  # To intentionally replace existing public.fact_* tables with views:
+  python3 scripts/run_chellegum_report.py --setup-views --force-replace-tables
+
 Prerequisites:
   pip install psycopg2-binary slack_sdk
 """
@@ -24,6 +27,24 @@ from datetime import date, timedelta
 CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
 
+PUBLIC_FACT_VIEW_SQL = {
+    "fact_spend_daily": """
+        CREATE OR REPLACE VIEW public.fact_spend_daily AS
+        SELECT client_slug, report_date, channel, spend, impressions, clicks
+        FROM public_marts.fact_spend_daily;
+    """,
+    "fact_kpi_daily": """
+        CREATE OR REPLACE VIEW public.fact_kpi_daily AS
+        SELECT client_slug, report_date, revenue, orders
+        FROM public_marts.fact_kpi_daily;
+    """,
+    "fact_tiktok_gmvmax_daily": """
+        CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
+        SELECT client_slug, report_date, cost AS spend, orders, gross_revenue AS revenue, cost_per_order, roas
+        FROM public_marts.fact_tiktok_gmv_max_daily;
+    """,
+}
+
 
 def get_connection():
     import psycopg2
@@ -34,31 +55,60 @@ def get_connection():
     return psycopg2.connect(db_url, connect_timeout=15)
 
 
-def setup_views():
+def _get_public_object_kind(cur, object_name: str) -> str | None:
+    """Return pg_class relkind for a public schema object, if it exists."""
+    cur.execute(
+        """
+        SELECT c.relkind
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = %s
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+        """,
+        (object_name,),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _replace_public_object_with_view(
+    cur,
+    object_name: str,
+    view_sql: str,
+    force_replace_tables: bool = False,
+) -> None:
+    """Safely replace a public object with a view, protecting real tables by default."""
+    kind = _get_public_object_kind(cur, object_name)
+
+    if kind in {"r", "p", "f"}:
+        if not force_replace_tables:
+            raise RuntimeError(
+                f"Refusing to replace public.{object_name}: existing object is a table-like relation "
+                "(possible real warehouse data). Re-run with --force-replace-tables only if intentional."
+            )
+        cur.execute(f"DROP TABLE IF EXISTS public.{object_name} CASCADE;")
+    elif kind == "v":
+        cur.execute(f"DROP VIEW IF EXISTS public.{object_name} CASCADE;")
+    elif kind == "m":
+        cur.execute(f"DROP MATERIALIZED VIEW IF EXISTS public.{object_name} CASCADE;")
+
+    cur.execute(view_sql)
+
+
+def setup_views(force_replace_tables: bool = False):
     """Create public schema views pointing to public_marts tables."""
     conn = get_connection()
     cur = conn.cursor()
 
     print("Creating views in public schema -> public_marts...")
-
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
-
-    cur.execute("""
-        CREATE OR REPLACE VIEW public.fact_spend_daily AS
-        SELECT client_slug, report_date, channel, spend, impressions, clicks
-        FROM public_marts.fact_spend_daily;
-    """)
-    cur.execute("""
-        CREATE OR REPLACE VIEW public.fact_kpi_daily AS
-        SELECT client_slug, report_date, revenue, orders
-        FROM public_marts.fact_kpi_daily;
-    """)
-    cur.execute("""
-        CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
-        SELECT client_slug, report_date, cost AS spend, orders, gross_revenue AS revenue, cost_per_order, roas
-        FROM public_marts.fact_tiktok_gmv_max_daily;
-    """)
+    for object_name, view_sql in PUBLIC_FACT_VIEW_SQL.items():
+        _replace_public_object_with_view(
+            cur=cur,
+            object_name=object_name,
+            view_sql=view_sql,
+            force_replace_tables=force_replace_tables,
+        )
 
     cur.execute("GRANT SELECT ON public.fact_spend_daily TO anon, authenticated;")
     cur.execute("GRANT SELECT ON public.fact_kpi_daily TO anon, authenticated;")
@@ -209,6 +259,11 @@ def fetch_and_post():
 
 
 if __name__ == "__main__":
+    force_replace_tables = "--force-replace-tables" in sys.argv
     if "--setup-views" in sys.argv:
-        setup_views()
+        try:
+            setup_views(force_replace_tables=force_replace_tables)
+        except RuntimeError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
     fetch_and_post()
