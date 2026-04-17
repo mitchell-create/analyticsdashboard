@@ -35,19 +35,19 @@ FROM public_marts.fact_kpi_daily;
 
 COMMENT ON VIEW public.fact_kpi_daily IS 'View over public_marts.fact_kpi_daily for REST API access.';
 
--- View: fact_tiktok_gmvmax_daily -> public_marts.fact_tiktok_gmvmax_daily
+-- View: fact_tiktok_gmvmax_daily -> public_marts.fact_tiktok_gmv_max_daily
 CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
 SELECT
     client_slug,
     report_date,
-    spend,
+    cost AS spend,
     orders,
-    revenue,
+    gross_revenue AS revenue,
     cost_per_order,
     roas
-FROM public_marts.fact_tiktok_gmvmax_daily;
+FROM public_marts.fact_tiktok_gmv_max_daily;
 
-COMMENT ON VIEW public.fact_tiktok_gmvmax_daily IS 'View over public_marts.fact_tiktok_gmvmax_daily for REST API access.';
+COMMENT ON VIEW public.fact_tiktok_gmvmax_daily IS 'View over public_marts.fact_tiktok_gmv_max_daily for REST API access.';
 
 -- Grant read access to the anon and authenticated roles (for REST API)
 GRANT SELECT ON public.fact_spend_daily TO anon, authenticated;
