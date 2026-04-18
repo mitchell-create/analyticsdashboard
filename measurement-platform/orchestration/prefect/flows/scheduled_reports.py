@@ -142,7 +142,12 @@ def _compute_period(report_date: date) -> tuple[date, date, str]:
 
 def _fetch_via_postgres(start_date: date, end_date: date) -> dict | None:
     """Fetch report data directly from PostgreSQL (public_marts schema)."""
-    conn = _get_pg_connection()
+    try:
+        conn = _get_pg_connection()
+    except Exception as e:
+        # Guard against any unexpected connection acquisition failures.
+        print(f"PostgreSQL connection acquisition failed: {e}")
+        return None
     if not conn:
         return None
 
