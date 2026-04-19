@@ -41,8 +41,58 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    # Safety: refuse destructive drops when legacy tables still contain data.
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'fact_spend_daily'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1) THEN
+                    RAISE EXCEPTION
+                        'Refusing to drop public.fact_spend_daily because it contains data. Migrate data before running --setup-views.';
+                END IF;
+                DROP TABLE public.fact_spend_daily CASCADE;
+            END IF;
+        END $$;
+    """)
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'fact_kpi_daily'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1) THEN
+                    RAISE EXCEPTION
+                        'Refusing to drop public.fact_kpi_daily because it contains data. Migrate data before running --setup-views.';
+                END IF;
+                DROP TABLE public.fact_kpi_daily CASCADE;
+            END IF;
+        END $$;
+    """)
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'fact_tiktok_gmvmax_daily'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM public.fact_tiktok_gmvmax_daily LIMIT 1) THEN
+                    RAISE EXCEPTION
+                        'Refusing to drop public.fact_tiktok_gmvmax_daily because it contains data. Migrate data before running --setup-views.';
+                END IF;
+                DROP TABLE public.fact_tiktok_gmvmax_daily CASCADE;
+            END IF;
+        END $$;
+    """)
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
