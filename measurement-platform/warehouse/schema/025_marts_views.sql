@@ -49,7 +49,12 @@ FROM public_marts.fact_tiktok_gmvmax_daily;
 
 COMMENT ON VIEW public.fact_tiktok_gmvmax_daily IS 'View over public_marts.fact_tiktok_gmvmax_daily for REST API access.';
 
--- Grant read access to the anon and authenticated roles (for REST API)
-GRANT SELECT ON public.fact_spend_daily TO anon, authenticated;
-GRANT SELECT ON public.fact_kpi_daily TO anon, authenticated;
-GRANT SELECT ON public.fact_tiktok_gmvmax_daily TO anon, authenticated;
+-- Restrict read access to service_role only.
+-- Avoid exposing warehouse metrics to public clients via anon/authenticated keys.
+REVOKE ALL ON public.fact_spend_daily FROM anon, authenticated;
+REVOKE ALL ON public.fact_kpi_daily FROM anon, authenticated;
+REVOKE ALL ON public.fact_tiktok_gmvmax_daily FROM anon, authenticated;
+
+GRANT SELECT ON public.fact_spend_daily TO service_role;
+GRANT SELECT ON public.fact_kpi_daily TO service_role;
+GRANT SELECT ON public.fact_tiktok_gmvmax_daily TO service_role;
