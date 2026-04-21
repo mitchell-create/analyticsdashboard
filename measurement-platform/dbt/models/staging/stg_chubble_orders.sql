@@ -8,8 +8,25 @@
   )
 }}
 
+{% set chubble_orders_relation = none %}
+{% if execute %}
+  {% set chubble_orders_relation = adapter.get_relation(
+      database=target.database,
+      schema=var('raw_schema', 'raw'),
+      identifier='chubble_orders'
+  ) %}
+{% endif %}
+
 with source as (
-  select * from {{ source('raw_chubble', 'chubble_orders') }}
+  {% if chubble_orders_relation is not none %}
+    select * from {{ source('raw_chubble', 'chubble_orders') }}
+  {% else %}
+    select
+      cast(null as timestamp) as created_at,
+      cast(null as text) as financial_status,
+      cast(null as numeric(14, 2)) as total_price
+    where 1 = 0
+  {% endif %}
 ),
 
 daily as (
