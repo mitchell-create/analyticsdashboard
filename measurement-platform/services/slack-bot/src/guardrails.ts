@@ -34,6 +34,47 @@ const FORBIDDEN_PATTERNS = [
   /(\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b|\bcreate\b|\balter\b|\btruncate\b|\bgrant\b|\brevoke\b)/i,
 ];
 
+const FROM_CLAUSE_PATTERN =
+  /\bfrom\b([\s\S]*?)(?=\bwhere\b|\bgroup\s+by\b|\border\s+by\b|\blimit\b|\bhaving\b|\bunion\b|\bintersect\b|\bexcept\b|\bjoin\b|$)/i;
+const JOIN_TABLE_PATTERN = /\b(?:left|right|full|inner|cross)?\s*join\s+([a-zA-Z0-9_."`]+)/gi;
+
+function normalizeTableRef(tableRef: string): string {
+  return tableRef
+    .trim()
+    .replace(/,$/, "")
+    .replace(/"/g, "")
+    .replace(/`/g, "")
+    .toLowerCase();
+}
+
+function extractFromTables(sql: string): string[] {
+  const match = sql.match(FROM_CLAUSE_PATTERN);
+  if (!match?.[1]) return [];
+
+  return match[1]
+    .split(/\s*,\s*/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      // Keep only the table token and ignore aliases.
+      const token = entry.split(/\s+/)[0];
+      return token.startsWith("(") ? "" : normalizeTableRef(token);
+    })
+    .filter(Boolean);
+}
+
+function extractJoinTables(sql: string): string[] {
+  const refs: string[] = [];
+  for (const match of sql.matchAll(JOIN_TABLE_PATTERN)) {
+    refs.push(normalizeTableRef(match[1] ?? ""));
+  }
+  return refs.filter(Boolean);
+}
+
+function extractTableRefs(sql: string): string[] {
+  return [...extractFromTables(sql), ...extractJoinTables(sql)];
+}
+
 /**
  * Returns true if the SQL is allowed (SELECT only, allowlisted tables).
  */
@@ -47,12 +88,8 @@ export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string }
       return { allowed: false, reason: "Query contains forbidden statement" };
     }
   }
-  // Extract table names from FROM and JOIN (simple heuristic)
-  const fromMatch = sql.match(/\bfrom\s+([\w."]+)/gi);
-  const joinMatch = sql.match(/\bjoin\s+([\w."]+)/gi);
-  const tables = [...(fromMatch || []), ...(joinMatch || [])].map((s) =>
-    s.replace(/\b(from|join)\s+/i, "").trim().replace(/^["']?([^."']+)/, "$1")
-  );
+
+  const tables = extractTableRefs(sql);
   for (const t of tables) {
     const base = t.split(".").pop() ?? t;
     if (!ALLOWLISTED_TABLES.has(base) && !ALLOWLISTED_TABLES.has(t)) {
@@ -66,10 +103,6 @@ export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string }
  * Extract table names from SQL for audit (simple).
  */
 export function extractTablesUsed(sql: string): string | null {
-  const fromMatch = sql.match(/\bfrom\s+([\w."]+)/gi);
-  const joinMatch = sql.match(/\bjoin\s+([\w."]+)/gi);
-  const tables = [...(fromMatch || []), ...(joinMatch || [])].map((s) =>
-    s.replace(/\b(from|join)\s+/i, "").trim()
-  );
+  const tables = extractTableRefs(sql);
   return tables.length ? tables.join(", ") : null;
 }
