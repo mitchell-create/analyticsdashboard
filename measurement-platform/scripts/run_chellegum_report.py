@@ -25,6 +25,39 @@ CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
 
 
+def _prepare_public_view_target(cur, table_name):
+    """Drop only empty legacy tables before replacing them with public views."""
+    cur.execute(
+        """
+        SELECT c.relkind
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = %s
+        """,
+        (table_name,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+
+    relkind = row[0]
+    if relkind == "v":
+        return
+    if relkind in ("r", "p", "f"):
+        cur.execute(f"SELECT EXISTS (SELECT 1 FROM public.{table_name} LIMIT 1);")
+        has_rows = cur.fetchone()[0]
+        if has_rows:
+            raise RuntimeError(
+                f"Refusing to replace non-empty public.{table_name}; "
+                "move or back up the data before creating the REST view."
+            )
+        cur.execute(f"DROP TABLE public.{table_name} CASCADE;")
+        return
+
+    raise RuntimeError(f"Refusing to replace unsupported relation public.{table_name} (relkind={relkind})")
+
+
 def get_connection():
     import psycopg2
     db_url = os.environ.get("SUPABASE_DB_URL")
@@ -41,8 +74,8 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    _prepare_public_view_target(cur, "fact_spend_daily")
+    _prepare_public_view_target(cur, "fact_kpi_daily")
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS

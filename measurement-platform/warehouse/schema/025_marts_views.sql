@@ -5,11 +5,46 @@
 -- Run this migration once via Supabase SQL Editor or psql:
 --   psql $SUPABASE_DB_URL -f 025_marts_views.sql
 
--- Drop existing empty tables so we can replace them with views.
+-- Drop existing empty shell tables so we can replace them with views.
 -- (The original 020_facts.sql created empty tables in public schema;
 --  dbt writes the actual data to public_marts.)
-DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;
-DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;
+DO $$
+DECLARE
+    relation_kind "char";
+    rows_found boolean;
+BEGIN
+    SELECT c.relkind INTO relation_kind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'fact_spend_daily';
+
+    IF relation_kind IN ('r', 'p', 'f') THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1)' INTO rows_found;
+        IF rows_found THEN
+            RAISE EXCEPTION 'Refusing to replace non-empty public.fact_spend_daily';
+        END IF;
+        DROP TABLE public.fact_spend_daily CASCADE;
+    ELSIF relation_kind IS NOT NULL AND relation_kind <> 'v' THEN
+        RAISE EXCEPTION 'Refusing to replace unsupported relation public.fact_spend_daily (relkind=%)', relation_kind;
+    END IF;
+
+    SELECT c.relkind INTO relation_kind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'fact_kpi_daily';
+
+    IF relation_kind IN ('r', 'p', 'f') THEN
+        EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1)' INTO rows_found;
+        IF rows_found THEN
+            RAISE EXCEPTION 'Refusing to replace non-empty public.fact_kpi_daily';
+        END IF;
+        DROP TABLE public.fact_kpi_daily CASCADE;
+    ELSIF relation_kind IS NOT NULL AND relation_kind <> 'v' THEN
+        RAISE EXCEPTION 'Refusing to replace unsupported relation public.fact_kpi_daily (relkind=%)', relation_kind;
+    END IF;
+END $$;
 
 -- View: fact_spend_daily -> public_marts.fact_spend_daily
 CREATE OR REPLACE VIEW public.fact_spend_daily AS
