@@ -12,6 +12,7 @@ spec.loader.exec_module(report)
 
 def test_setup_views_checks_public_tables_before_replacing_them(monkeypatch):
     cursor = Mock()
+    cursor.fetchone.return_value = None
     connection = Mock()
     connection.cursor.return_value = cursor
     monkeypatch.setattr(report, "get_connection", lambda: connection)
