@@ -24,6 +24,31 @@ from datetime import date, timedelta
 CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
 
+NON_EMPTY_PUBLIC_TABLE_GUARD_SQL = """
+    DO $$
+    DECLARE
+        target_table text;
+        row_count bigint;
+    BEGIN
+        FOREACH target_table IN ARRAY ARRAY['fact_spend_daily', 'fact_kpi_daily'] LOOP
+            SELECT c.reltuples::bigint
+            INTO row_count
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname = target_table
+              AND c.relkind IN ('r', 'p', 'f');
+
+            IF row_count IS NOT NULL THEN
+                EXECUTE format('SELECT count(*) FROM public.%I', target_table) INTO row_count;
+                IF row_count > 0 THEN
+                    RAISE EXCEPTION 'Refusing to drop non-empty public.% table while creating REST views', target_table;
+                END IF;
+            END IF;
+        END LOOP;
+    END $$;
+"""
+
 
 def get_connection():
     import psycopg2
@@ -40,6 +65,8 @@ def setup_views():
     cur = conn.cursor()
 
     print("Creating views in public schema -> public_marts...")
+
+    cur.execute(NON_EMPTY_PUBLIC_TABLE_GUARD_SQL)
 
     cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
     cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")

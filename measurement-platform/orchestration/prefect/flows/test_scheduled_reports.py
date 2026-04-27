@@ -1,5 +1,4 @@
 import importlib.util
-import json
 import sys
 import types
 import unittest
@@ -9,10 +8,21 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+class _Task:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __call__(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
+
+    def submit(self, *args, **kwargs):
+        return types.SimpleNamespace(result=lambda: self.fn(*args, **kwargs))
+
+
 def _load_module():
     prefect = types.ModuleType("prefect")
     prefect.flow = lambda **_kwargs: lambda fn: fn
-    prefect.task = lambda fn: fn
+    prefect.task = lambda fn: _Task(fn)
 
     logging = types.ModuleType("prefect.logging")
     logging.get_run_logger = lambda: types.SimpleNamespace(info=lambda *_args, **_kwargs: None)
@@ -22,6 +32,15 @@ def _load_module():
 
     module_path = Path(__file__).with_name("scheduled_reports.py")
     spec = importlib.util.spec_from_file_location("scheduled_reports", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_report_script():
+    module_path = Path(__file__).parents[3] / "scripts" / "run_chellegum_report.py"
+    spec = importlib.util.spec_from_file_location("run_chellegum_report", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -87,6 +106,39 @@ class ScheduledReportRestFallbackTest(unittest.TestCase):
         self.assertEqual(data["tiktok_ads"]["spend"], 50)
         self.assertEqual(data["gmv_max"]["spend"], 25)
         self.assertEqual(data["gmv_max"]["purchase_value"], 0)
+
+
+class ReportSetupViewsTest(unittest.TestCase):
+    def setUp(self):
+        self.script = _load_report_script()
+
+    def test_setup_views_checks_for_non_empty_public_tables_before_drop(self):
+        executed = []
+
+        class Cursor:
+            def execute(self, sql):
+                executed.append(sql)
+
+            def close(self):
+                pass
+
+        class Connection:
+            def cursor(self):
+                return Cursor()
+
+            def commit(self):
+                pass
+
+            def close(self):
+                pass
+
+        with patch.object(self.script, "get_connection", return_value=Connection()):
+            self.script.setup_views()
+
+        self.assertEqual(executed[0], self.script.NON_EMPTY_PUBLIC_TABLE_GUARD_SQL)
+        self.assertIn("SELECT count(*) FROM public.%I", executed[0])
+        self.assertIn("RAISE EXCEPTION 'Refusing to drop non-empty public.% table", executed[0])
+        self.assertEqual(executed[1], "DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
 
 
 if __name__ == "__main__":
