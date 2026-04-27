@@ -42,13 +42,17 @@ class ScheduledReportRestFallbackTest(unittest.TestCase):
             self.assertIsNone(self.reports._rest_query("fact_spend_daily"))
 
     def test_rest_query_returns_none_on_invalid_json(self):
-        response = types.SimpleNamespace(
-            __enter__=lambda self: self,
-            __exit__=lambda *_args: None,
-            read=lambda: b"not json",
-        )
+        class Response:
+            def __enter__(self):
+                return self
 
-        with patch.object(self.reports.urllib.request, "urlopen", return_value=response):
+            def __exit__(self, *_args):
+                return None
+
+            def read(self):
+                return b"not json"
+
+        with patch.object(self.reports.urllib.request, "urlopen", return_value=Response()):
             self.assertIsNone(self.reports._rest_query("fact_spend_daily"))
 
     def test_fetch_via_rest_fails_closed_when_required_query_fails(self):
