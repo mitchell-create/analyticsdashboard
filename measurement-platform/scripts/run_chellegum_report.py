@@ -23,6 +23,11 @@ from datetime import date, timedelta
 
 CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
+PUBLIC_VIEW_NAMES = (
+    "fact_spend_daily",
+    "fact_kpi_daily",
+    "fact_tiktok_gmvmax_daily",
+)
 
 
 def get_connection():
@@ -34,6 +39,37 @@ def get_connection():
     return psycopg2.connect(db_url, connect_timeout=15)
 
 
+def _replace_empty_table_guard_sql(view_name: str) -> str:
+    """Return SQL that only drops an existing public table if it is empty."""
+    if view_name not in PUBLIC_VIEW_NAMES:
+        raise ValueError(f"Unexpected public view name: {view_name}")
+
+    return f"""
+        DO $$
+        DECLARE
+            existing_kind "char";
+            existing_rows bigint;
+        BEGIN
+            SELECT c.relkind
+              INTO existing_kind
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relname = '{view_name}';
+
+            IF existing_kind IN ('r', 'p', 'f') THEN
+                EXECUTE 'SELECT count(*) FROM public.{view_name}' INTO existing_rows;
+                IF existing_rows > 0 THEN
+                    RAISE EXCEPTION
+                        'Refusing to replace non-empty public.{view_name} table with a view';
+                END IF;
+
+                DROP TABLE public.{view_name} CASCADE;
+            END IF;
+        END $$;
+    """
+
+
 def setup_views():
     """Create public schema views pointing to public_marts tables."""
     conn = get_connection()
@@ -41,8 +77,8 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    for view_name in PUBLIC_VIEW_NAMES:
+        cur.execute(_replace_empty_table_guard_sql(view_name))
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS

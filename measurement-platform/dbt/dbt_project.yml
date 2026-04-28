@@ -49,3 +49,9 @@ seeds:
         geo_name: text
         geo_type: text
         country_code: text
+    client_ad_accounts:
+      +schema: marts
+      +column_types:
+        client_slug: text
+        platform: text
+        account_id: text
