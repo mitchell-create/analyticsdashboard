@@ -25,6 +25,30 @@ CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
 
 
+def _replace_placeholder_table_sql(table_name):
+    return f"""
+        DO $$
+        DECLARE
+            existing_kind "char";
+            existing_rows bigint;
+        BEGIN
+            SELECT c.relkind INTO existing_kind
+            FROM pg_class c
+            WHERE c.oid = to_regclass('public.{table_name}');
+
+            IF existing_kind IN ('r', 'p', 'f') THEN
+                EXECUTE 'SELECT count(*) FROM public.{table_name}' INTO existing_rows;
+                IF existing_rows > 0 THEN
+                    RAISE EXCEPTION 'Refusing to replace non-empty table public.{table_name} with a view';
+                END IF;
+                DROP TABLE public.{table_name};
+            ELSIF existing_kind = 'm' THEN
+                DROP MATERIALIZED VIEW public.{table_name};
+            END IF;
+        END $$;
+    """
+
+
 def get_connection():
     import psycopg2
     db_url = os.environ.get("SUPABASE_DB_URL")
@@ -41,8 +65,8 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    cur.execute(_replace_placeholder_table_sql("fact_spend_daily"))
+    cur.execute(_replace_placeholder_table_sql("fact_kpi_daily"))
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
