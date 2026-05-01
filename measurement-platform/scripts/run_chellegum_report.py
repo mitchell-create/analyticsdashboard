@@ -46,6 +46,7 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
+    existing_relations = {}
     for view_name in PUBLIC_VIEW_NAMES:
         cur.execute(
             """
@@ -62,13 +63,12 @@ def setup_views():
                 f"public.{view_name} exists and is not a view. "
                 "Refusing to replace it automatically to avoid data loss."
             )
+        if existing:
+            existing_relations[view_name] = existing[0]
 
     for view_name, relkind in existing_relations.items():
         drop_kind = "MATERIALIZED VIEW" if relkind == "m" else "VIEW"
         cur.execute(f"DROP {drop_kind} IF EXISTS public.{view_name};")
-
-    for view_name in PUBLIC_VIEW_NAMES:
-        pass
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
