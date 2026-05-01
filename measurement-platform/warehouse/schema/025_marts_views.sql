@@ -22,8 +22,10 @@ begin
     end if;
 
     select relkind into target_kind from pg_class where oid = target;
-    if target_kind in ('v', 'm') then
+    if target_kind = 'v' then
       execute format('DROP VIEW IF EXISTS %s', target);
+    elsif target_kind = 'm' then
+      execute format('DROP MATERIALIZED VIEW IF EXISTS %s', target);
     elsif target_kind in ('r', 'p', 'f') then
       execute format('SELECT count(*) FROM %s', target) into row_count;
       if row_count > 0 then

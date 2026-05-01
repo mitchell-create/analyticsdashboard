@@ -63,8 +63,12 @@ def setup_views():
                 "Refusing to replace it automatically to avoid data loss."
             )
 
+    for view_name, relkind in existing_relations.items():
+        drop_kind = "MATERIALIZED VIEW" if relkind == "m" else "VIEW"
+        cur.execute(f"DROP {drop_kind} IF EXISTS public.{view_name};")
+
     for view_name in PUBLIC_VIEW_NAMES:
-        cur.execute(f"DROP VIEW IF EXISTS public.{view_name};")
+        pass
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
