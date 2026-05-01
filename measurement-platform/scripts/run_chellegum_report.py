@@ -23,6 +23,11 @@ from datetime import date, timedelta
 
 CHUBBLEGUM_CHANNEL_ID = "C0AEXRYPA9Y"
 MARTS_SCHEMA = "public_marts"
+PUBLIC_VIEW_NAMES = (
+    "fact_spend_daily",
+    "fact_kpi_daily",
+    "fact_tiktok_gmvmax_daily",
+)
 
 
 def get_connection():
@@ -41,8 +46,25 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
+    for view_name in PUBLIC_VIEW_NAMES:
+        cur.execute(
+            """
+            SELECT c.relkind
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = %s
+            """,
+            (view_name,),
+        )
+        existing = cur.fetchone()
+        if existing and existing[0] not in ("v", "m"):
+            raise RuntimeError(
+                f"public.{view_name} exists and is not a view. "
+                "Refusing to replace it automatically to avoid data loss."
+            )
+
+    for view_name in PUBLIC_VIEW_NAMES:
+        cur.execute(f"DROP VIEW IF EXISTS public.{view_name};")
 
     cur.execute("""
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
