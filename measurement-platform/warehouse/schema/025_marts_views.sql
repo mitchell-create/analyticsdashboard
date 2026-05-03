@@ -5,11 +5,57 @@
 -- Run this migration once via Supabase SQL Editor or psql:
 --   psql $SUPABASE_DB_URL -f 025_marts_views.sql
 
--- Drop existing empty tables so we can replace them with views.
--- (The original 020_facts.sql created empty tables in public schema;
---  dbt writes the actual data to public_marts.)
-DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;
-DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;
+-- Replace only empty placeholder tables. Never use CASCADE here: if one of these
+-- public objects has real rows or dependents, abort instead of deleting data.
+DO $$
+DECLARE
+    rel_kind "char";
+    has_rows boolean;
+BEGIN
+    SELECT c.relkind INTO rel_kind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'fact_spend_daily';
+
+    IF rel_kind = 'v' THEN
+        NULL;
+    ELSIF rel_kind = 'm' THEN
+        DROP MATERIALIZED VIEW public.fact_spend_daily;
+    ELSIF rel_kind IN ('r', 'p', 'f') THEN
+        SELECT EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1) INTO has_rows;
+        IF has_rows THEN
+            RAISE EXCEPTION 'Refusing to replace non-empty public.fact_spend_daily';
+        END IF;
+        DROP TABLE public.fact_spend_daily;
+    ELSIF rel_kind IS NOT NULL THEN
+        RAISE EXCEPTION 'Refusing to replace unsupported object public.fact_spend_daily';
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    rel_kind "char";
+    has_rows boolean;
+BEGIN
+    SELECT c.relkind INTO rel_kind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'fact_kpi_daily';
+
+    IF rel_kind = 'v' THEN
+        NULL;
+    ELSIF rel_kind = 'm' THEN
+        DROP MATERIALIZED VIEW public.fact_kpi_daily;
+    ELSIF rel_kind IN ('r', 'p', 'f') THEN
+        SELECT EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1) INTO has_rows;
+        IF has_rows THEN
+            RAISE EXCEPTION 'Refusing to replace non-empty public.fact_kpi_daily';
+        END IF;
+        DROP TABLE public.fact_kpi_daily;
+    ELSIF rel_kind IS NOT NULL THEN
+        RAISE EXCEPTION 'Refusing to replace unsupported object public.fact_kpi_daily';
+    END IF;
+END $$;
 
 -- View: fact_spend_daily -> public_marts.fact_spend_daily
 CREATE OR REPLACE VIEW public.fact_spend_daily AS
@@ -35,17 +81,17 @@ FROM public_marts.fact_kpi_daily;
 
 COMMENT ON VIEW public.fact_kpi_daily IS 'View over public_marts.fact_kpi_daily for REST API access.';
 
--- View: fact_tiktok_gmvmax_daily -> public_marts.fact_tiktok_gmvmax_daily
+-- View: fact_tiktok_gmvmax_daily -> public_marts.fact_tiktok_gmv_max_daily
 CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
 SELECT
     client_slug,
     report_date,
-    spend,
+    cost AS spend,
     orders,
-    revenue,
+    gross_revenue AS revenue,
     cost_per_order,
     roas
-FROM public_marts.fact_tiktok_gmvmax_daily;
+FROM public_marts.fact_tiktok_gmv_max_daily;
 
 COMMENT ON VIEW public.fact_tiktok_gmvmax_daily IS 'View over public_marts.fact_tiktok_gmvmax_daily for REST API access.';
 

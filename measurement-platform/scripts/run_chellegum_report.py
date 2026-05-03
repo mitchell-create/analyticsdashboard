@@ -34,6 +34,47 @@ def get_connection():
     return psycopg2.connect(db_url, connect_timeout=15)
 
 
+def replace_empty_public_table_with_view(cur, view_name: str, view_sql: str) -> None:
+    """Replace only safe public objects; never drop populated tables."""
+    from psycopg2 import sql
+
+    cur.execute(
+        """
+        SELECT c.relkind
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = %s
+        """,
+        (view_name,),
+    )
+    row = cur.fetchone()
+    if row:
+        relkind = row[0]
+        if relkind == "v":
+            pass
+        elif relkind == "m":
+            cur.execute(
+                sql.SQL("DROP MATERIALIZED VIEW public.{}").format(sql.Identifier(view_name))
+            )
+        elif relkind in ("r", "p", "f"):
+            cur.execute(
+                sql.SQL("SELECT EXISTS (SELECT 1 FROM public.{} LIMIT 1)").format(
+                    sql.Identifier(view_name)
+                )
+            )
+            has_rows = cur.fetchone()[0]
+            if has_rows:
+                raise RuntimeError(
+                    f"Refusing to replace non-empty public.{view_name}; "
+                    "move or back up the table before creating the REST view."
+                )
+            cur.execute(sql.SQL("DROP TABLE public.{}").format(sql.Identifier(view_name)))
+        else:
+            raise RuntimeError(f"Refusing to replace unsupported object public.{view_name}")
+
+    cur.execute(view_sql)
+
+
 def setup_views():
     """Create public schema views pointing to public_marts tables."""
     conn = get_connection()
@@ -41,20 +82,17 @@ def setup_views():
 
     print("Creating views in public schema -> public_marts...")
 
-    cur.execute("DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;")
-    cur.execute("DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;")
-
-    cur.execute("""
+    replace_empty_public_table_with_view(cur, "fact_spend_daily", """
         CREATE OR REPLACE VIEW public.fact_spend_daily AS
         SELECT client_slug, report_date, channel, spend, impressions, clicks
         FROM public_marts.fact_spend_daily;
     """)
-    cur.execute("""
+    replace_empty_public_table_with_view(cur, "fact_kpi_daily", """
         CREATE OR REPLACE VIEW public.fact_kpi_daily AS
         SELECT client_slug, report_date, revenue, orders
         FROM public_marts.fact_kpi_daily;
     """)
-    cur.execute("""
+    replace_empty_public_table_with_view(cur, "fact_tiktok_gmvmax_daily", """
         CREATE OR REPLACE VIEW public.fact_tiktok_gmvmax_daily AS
         SELECT client_slug, report_date, cost AS spend, orders, gross_revenue AS revenue, cost_per_order, roas
         FROM public_marts.fact_tiktok_gmv_max_daily;
