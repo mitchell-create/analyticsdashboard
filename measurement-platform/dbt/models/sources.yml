@@ -11,8 +11,6 @@ sources:
     tables:
       - name: meta_ads_insights
         description: Meta Ads daily insights (Airbyte)
-      - name: meta_ads_insights_region
-        description: Meta Ads insights by region (US state) for GeoLift
       - name: google_account_performance_report
         description: Google Ads account performance (Airbyte)
       - name: tiktok_advertisers_reports_daily
@@ -35,6 +33,60 @@ sources:
     tables:
       - name: chubble_orders
         description: Shopify orders for Chubble Gum (Airbyte)
+
+  # ─── Crazy Rumors Shopify orders (Airbyte) ──────────────────────────────────
+  - name: raw_crazy_rumors
+    description: Crazy Rumors raw tables from Airbyte
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: crazy_rumors_orders
+        description: Shopify orders for Crazy Rumors (Airbyte)
+
+  # ─── Zoka Shopify orders (Airbyte) ────────────────────────────────────────────
+  - name: raw_zoka
+    description: Zoka raw tables from Airbyte
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: zoka_orders
+        description: Shopify orders for Zoka (Airbyte)
+
+  # ─── Klaviyo per-client (direct sync via klaviyo_sync.py) ────────────────────
+  - name: raw_klaviyo
+    description: Klaviyo campaign and flow reports per client (klaviyo_sync.py)
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: expand_klaviyo_campaign_values_reports
+        description: Expand — Klaviyo campaign values reports
+      - name: expand_klaviyo_flow_series_reports
+        description: Expand — Klaviyo flow series reports
+      - name: chubble_klaviyo_campaign_values_reports
+        description: Chubble — Klaviyo campaign values reports
+      - name: chubble_klaviyo_flow_series_reports
+        description: Chubble — Klaviyo flow series reports
+      - name: crazy_rumors_klaviyo_campaign_values_reports
+        description: Crazy Rumors — Klaviyo campaign values reports
+      - name: crazy_rumors_klaviyo_flow_series_reports
+        description: Crazy Rumors — Klaviyo flow series reports
+      - name: zoka_klaviyo_campaign_values_reports
+        description: Zoka — Klaviyo campaign values reports
+      - name: zoka_klaviyo_flow_series_reports
+        description: Zoka — Klaviyo flow series reports
+      - name: babybay_klaviyo_campaign_values_reports
+        description: babybay — Klaviyo campaign values reports
+      - name: babybay_klaviyo_flow_series_reports
+        description: babybay — Klaviyo flow series reports
+
+  # ─── GA4 (all properties mixed; use property_id to filter by client) ─────────
+  - name: raw_ga4
+    description: GA4 data from Airbyte (all properties mixed, use property_id to filter)
+    schema: "{{ var('raw_schema', 'raw') }}"
+    tables:
+      - name: ga4_events_report
+        description: GA4 events with counts, users, revenue by event name
+      - name: ga4_website_overview
+        description: GA4 sessions, users, pageviews, engagement metrics
+      - name: ga4_traffic_acquisition_session_source_medium_report
+        description: GA4 sessions by source/medium
 
   # ─── Chubble TikTok GMV Max (Coupler.io) ──────────────────────────────────────
   - name: coupler_chubble
