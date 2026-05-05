@@ -1,6 +1,7 @@
--- Email & Klaviyo: Opens and clicks by day (Line chart)
+-- Email & Klaviyo: Sends, Opens, Clicks over time (Line chart)
 SELECT
   report_date AS date,
+  COALESCE(SUM(sent), 0) AS sent,
   COALESCE(SUM(opens), 0) AS opens,
   COALESCE(SUM(clicks), 0) AS clicks
 FROM public_marts.fact_klaviyo_daily

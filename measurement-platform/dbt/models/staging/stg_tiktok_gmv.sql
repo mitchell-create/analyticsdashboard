@@ -16,8 +16,8 @@ with source as (
 renamed as (
   select
     date_trunc('day', (stat_time_day::date))::date as report_date,
-    coalesce((total_purchase_value)::numeric(14, 2), 0) as gmv,
-    coalesce((total_purchase)::int, 0) as orders,
+    coalesce((gross_revenue)::numeric(14, 2), 0) as gmv,
+    coalesce((orders)::int, 0) as orders,
     coalesce((cost)::numeric(14, 2), 0) as spend
   from source
 )

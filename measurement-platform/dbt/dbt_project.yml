@@ -42,6 +42,11 @@ models:
 
 seeds:
   measurement_platform:
+    client_ad_accounts:
+      +column_types:
+        client_slug: text
+        platform: text
+        account_id: text
     dim_geo_states:
       +schema: marts
       +column_types:
