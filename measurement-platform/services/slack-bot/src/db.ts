@@ -8,6 +8,23 @@ import { getClient } from "./client_registry";
 
 const pgPools: Map<string, Pool> = new Map();
 
+function shouldUseSsl(dbUrl: string): boolean {
+  try {
+    const parsed = new URL(dbUrl);
+    const host = parsed.hostname.toLowerCase();
+    const sslMode = parsed.searchParams.get("sslmode")?.toLowerCase();
+
+    if (sslMode === "disable") return false;
+    if (sslMode === "require") return true;
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false;
+    if (host.startsWith("100.")) return false;
+
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 export interface AuditRow {
   user_id?: string;
   channel_id?: string;
@@ -39,7 +56,7 @@ function getPool(clientSlug?: string): Pool | null {
 
   const pool = new Pool({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
+    ssl: shouldUseSsl(dbUrl) ? { rejectUnauthorized: false } : false,
     max: 3,
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 30000,
