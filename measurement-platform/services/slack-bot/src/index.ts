@@ -314,12 +314,11 @@ async function pollCompletedExperiments(): Promise<void> {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-const port = Number(process.env.PORT) || 3001;
 (async () => {
   loadClientRegistry();
-  await app.start(port);
+  await app.start();
   const slugs = listClientSlugs();
-  console.log(`Slack bot running on port ${port}`);
+  console.log(`Slack bot started (Socket Mode — outbound WebSocket to Slack, no port bound)`);
   console.log(`  Clients: ${slugs.length > 0 ? slugs.join(", ") : "(single-client mode)"}`);
   console.log(`  Commands: /analytics, /geolift`);
 

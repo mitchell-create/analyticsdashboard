@@ -37,7 +37,7 @@ Install-WingetPackage "GoLang.Go" "Go"
 Install-WingetPackage "Microsoft.VisualStudioCode" "VS Code"
 
 # --- Database ---
-Install-WingetPackage "PostgreSQL.PostgreSQL.16" "PostgreSQL 16"
+Install-WingetPackage "PostgreSQL.PostgreSQL.17" "PostgreSQL 17"
 
 # --- Containers + Airbyte ---
 Install-WingetPackage "Docker.DockerDesktop" "Docker Desktop"
@@ -61,7 +61,9 @@ python -m pip install --upgrade pip 2>&1 | Out-Null
 python -m pip install dbt-postgres prefect psycopg2-binary slack-sdk requests 2>&1 | Tee-Object -Append $logFile
 
 # --- Manual download: abctl (Airbyte CLI) ---
-$abctlVersion = "v0.31.0"  # Update if newer is available
+# v0.31.0 release URL was unavailable during real-world bootstrap (Windows zip 404'd);
+# v0.30.4 is the last known good Windows build.
+$abctlVersion = "v0.30.4"
 $abctlDir = "$HOME\abctl-$abctlVersion-windows-amd64"
 if (-not (Test-Path "$abctlDir\abctl.exe")) {
     Log "Downloading abctl $abctlVersion..."
@@ -76,11 +78,13 @@ if (-not (Test-Path "$abctlDir\abctl.exe")) {
 }
 
 # --- Manual download: Metabase JAR ---
+# v0.51.x is too old to load H2 metadata files written by v0.58 — pin to a current 0.58.x.
+$metabaseVersion = "v0.58.13"
 $metabaseDir = "$HOME\metabase"
 if (-not (Test-Path "$metabaseDir\metabase.jar")) {
-    Log "Downloading Metabase JAR..."
+    Log "Downloading Metabase JAR ($metabaseVersion)..."
     New-Item -ItemType Directory -Path $metabaseDir -Force | Out-Null
-    Invoke-WebRequest -Uri "https://downloads.metabase.com/v0.51.0/metabase.jar" -OutFile "$metabaseDir\metabase.jar"
+    Invoke-WebRequest -Uri "https://downloads.metabase.com/$metabaseVersion/metabase.jar" -OutFile "$metabaseDir\metabase.jar"
     Log "  Metabase JAR at $metabaseDir\metabase.jar"
 }
 
