@@ -58,12 +58,19 @@ const FORBIDDEN_PATTERNS = [
 ];
 
 /**
- * Returns true if the SQL is allowed (SELECT only, allowlisted tables).
+ * Returns true if the SQL is allowed (SELECT/WITH only, allowlisted tables).
  */
 export function isSqlAllowed(sql: string): { allowed: boolean; reason?: string } {
-  const normalized = sql.trim().toLowerCase();
-  if (!normalized.startsWith("select ")) {
-    return { allowed: false, reason: "Only SELECT queries are allowed" };
+  // Strip leading SQL comments before checking the first keyword, then lowercase.
+  const normalized = sql
+    .replace(/^(\s*--[^\n]*\n)+/g, "")
+    .replace(/^(\s*\/\*[\s\S]*?\*\/\s*)+/g, "")
+    .trim()
+    .toLowerCase();
+  // Allow read-only entry points: SELECT and WITH (CTE).
+  // FORBIDDEN_PATTERNS below still catches any embedded INSERT/UPDATE/etc.
+  if (!/^select\b/.test(normalized) && !/^with\b/.test(normalized)) {
+    return { allowed: false, reason: "Only SELECT or WITH (CTE) queries are allowed" };
   }
   for (const re of FORBIDDEN_PATTERNS) {
     if (re.test(sql)) {
