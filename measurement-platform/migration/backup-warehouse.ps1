@@ -1,11 +1,11 @@
 # backup-warehouse.ps1
-# Nightly Postgres backup to Google Drive via rclone.
-# Scheduled by Windows Task Scheduler at 3am (see MIGRATION_RUNBOOK.md Step 9).
+# Weekly Postgres backup → Google Drive via rclone (encrypted via crypt overlay).
+# Scheduled by Windows Task Scheduler — see MIGRATION_RUNBOOK.md Step 9.
 #
-# Retention policy applied here:
-#   - Keep all daily backups for the last 14 days
-#   - Keep weekly backups (Sunday) for the last 12 weeks
+# Retention policy:
+#   - Keep all weekly backups (Sunday) for the last 12 weeks
 #   - Keep monthly backups (1st of month) forever
+#   - Daily folder still receives every run that fires; pruned to last 14 days
 # rclone applies the cleanup; this script just creates new dumps.
 
 $ErrorActionPreference = "Continue"
@@ -26,15 +26,14 @@ Log "=== Backup starting ==="
 $dumpFile = "$dumpDir\analytics-$timestamp.dump"
 $pgDump = "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe"
 
-# Read DB password from secure source. Prefer Windows Credential Manager or a .pgpass file.
-# Quick path: store in env var via setx (one-time setup):
-#   setx PGPASSWORD "<your-app-pw>" /M     (run once as admin)
+# Read DB password — prefer env, fall back to credentials file
 if (-not $env:PGPASSWORD) {
     $pwFile = "$HOME\.openclaw\credentials\analytics-postgres-superuser-password.txt"
     if (Test-Path $pwFile) {
         $env:PGPASSWORD = (Get-Content $pwFile).Trim()
+        Log "PGPASSWORD loaded from credentials file"
     } else {
-        Log "ERROR: PGPASSWORD env var not set and credential file not found. Cannot dump."
+        Log "ERROR: PGPASSWORD env var not set and credentials file not found. Cannot dump."
         exit 1
     }
 }
@@ -50,35 +49,37 @@ if (-not (Test-Path $dumpFile)) {
 $dumpSize = [math]::Round((Get-Item $dumpFile).Length / 1MB, 2)
 Log "Dump complete: $dumpFile ($dumpSize MB)"
 
-# --- 2. Upload to Drive ---
-Log "Uploading to Google Drive via rclone..."
-rclone mkdir "gdrive-crypt:daily/" --log-file=$logFile --log-level INFO
-rclone mkdir "gdrive-crypt:weekly/" --log-file=$logFile --log-level INFO
-rclone mkdir "gdrive-crypt:monthly/" --log-file=$logFile --log-level INFO
+# --- 2. Pre-create destination folders (rclone delete fails on missing folders) ---
+foreach ($folder in @("daily", "weekly", "monthly")) {
+    rclone mkdir "gdrive-crypt:$folder/" 2>&1 | Out-Null
+}
+
+# --- 3. Upload to Drive (encrypted via gdrive-crypt overlay) ---
+Log "Uploading to Google Drive via rclone (encrypted)..."
 rclone copy $dumpFile "gdrive-crypt:daily/" --log-file=$logFile --log-level INFO
 
 # Tag this dump as weekly if Sunday
 if ((Get-Date).DayOfWeek -eq "Sunday") {
-    Log "Sunday - also tagging as weekly..."
+    Log "Sunday — also tagging as weekly..."
     rclone copy $dumpFile "gdrive-crypt:weekly/" --log-file=$logFile --log-level INFO
 }
 
 # Tag as monthly if 1st of month
 if ((Get-Date).Day -eq 1) {
-    Log "1st of month - also tagging as monthly..."
+    Log "1st of month — also tagging as monthly..."
     rclone copy $dumpFile "gdrive-crypt:monthly/" --log-file=$logFile --log-level INFO
 }
 
-# --- 3. Apply retention ---
+# --- 4. Apply retention ---
 Log "Pruning old backups..."
 
-# Daily: keep 14 days
+# Daily: keep 14 days (in case schedule is later set to daily)
 rclone delete "gdrive-crypt:daily/" --min-age 14d --log-file=$logFile
 
 # Weekly: keep 84 days (12 weeks)
 rclone delete "gdrive-crypt:weekly/" --min-age 84d --log-file=$logFile
 
-# Monthly: kept forever - no prune
+# Monthly: kept forever — no prune
 
 # Local dumps: keep last 7 only (save disk)
 Get-ChildItem $dumpDir -Filter "*.dump" |
@@ -86,10 +87,10 @@ Get-ChildItem $dumpDir -Filter "*.dump" |
     Select-Object -Skip 7 |
     Remove-Item -Force
 
-# --- 4. Optional: Slack alert on failure ---
+# --- 5. Optional: Slack alert on failure ---
 # Uncomment if you have SLACK_BOT_TOKEN set in machine env vars
 # if ($LASTEXITCODE -ne 0) {
-#     $payload = @{ channel = "C0AEXRYPA9Y"; text = ":warning: Warehouse backup FAILED at $timestamp - see $logFile" } | ConvertTo-Json
+#     $payload = @{ channel = "C0AEXRYPA9Y"; text = ":warning: Warehouse backup FAILED at $timestamp — see $logFile" } | ConvertTo-Json
 #     Invoke-RestMethod -Uri "https://slack.com/api/chat.postMessage" `
 #         -Method Post -Headers @{ Authorization = "Bearer $env:SLACK_BOT_TOKEN" } `
 #         -ContentType "application/json; charset=utf-8" -Body $payload
