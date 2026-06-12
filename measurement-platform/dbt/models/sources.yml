@@ -10,7 +10,9 @@ sources:
     schema: "{{ var('raw_schema', 'raw') }}"
     tables:
       - name: meta_ads_insights
-        description: Meta Ads daily insights (Airbyte)
+        description: Meta Ads ad-level insights (legacy Airbyte; historical archive)
+      - name: meta_customaccount_insights_daily
+        description: Meta Ads account-level daily insights (meta_sync.py direct API). Primary Meta spend source.
       - name: google_account_performance_report
         description: Google Ads account performance (Airbyte)
       - name: tiktok_advertisers_reports_daily
