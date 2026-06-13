@@ -214,9 +214,16 @@ analytics:
       user: app
       password: <app-pw>
       dbname: analytics
-      schema: public_marts
+      schema: public
       threads: 4
 ```
+
+**IMPORTANT — use `schema: public`, not `public_marts`.** dbt has no custom
+`generate_schema_name` macro here, so it concatenates `<target_schema>_<model_schema>`.
+Models set `+schema: staging` / `+schema: marts`, so with target `public` they build into
+`public_staging` and `public_marts` (what the reports + Metabase read). Setting the target to
+`public_marts` would build into `public_marts_marts` / `public_marts_staging` — a split-brain
+where dbt updates tables nobody reads.
 
 Save to `$HOME\repos\analyticsdashboard\measurement-platform\dbt\profiles.yml`.
 
