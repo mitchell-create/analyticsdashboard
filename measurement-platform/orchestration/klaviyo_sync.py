@@ -281,12 +281,17 @@ def create_tables(conn, slug):
         )
     """)
 
-    # Add unique constraint if not exists
     cur.execute(f"""
         DO $$ BEGIN
-            ALTER TABLE raw.{slug}_klaviyo_campaign_values_reports
-                ADD CONSTRAINT {slug}_campaign_values_uq UNIQUE (date, campaign_id, conversion_metric_id);
-        EXCEPTION WHEN duplicate_table THEN NULL;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'raw.{slug}_klaviyo_campaign_values_reports'::regclass
+                  AND conname = '{slug}_campaign_values_uq'
+            ) THEN
+                ALTER TABLE raw.{slug}_klaviyo_campaign_values_reports
+                    ADD CONSTRAINT {slug}_campaign_values_uq UNIQUE (date, campaign_id, conversion_metric_id);
+            END IF;
         END $$
     """)
 
@@ -309,9 +314,15 @@ def create_tables(conn, slug):
 
     cur.execute(f"""
         DO $$ BEGIN
-            ALTER TABLE raw.{slug}_klaviyo_flow_series_reports
-                ADD CONSTRAINT {slug}_flow_series_uq UNIQUE (date, flow_id, flow_message_id, conversion_metric_id);
-        EXCEPTION WHEN duplicate_table THEN NULL;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conrelid = 'raw.{slug}_klaviyo_flow_series_reports'::regclass
+                  AND conname = '{slug}_flow_series_uq'
+            ) THEN
+                ALTER TABLE raw.{slug}_klaviyo_flow_series_reports
+                    ADD CONSTRAINT {slug}_flow_series_uq UNIQUE (date, flow_id, flow_message_id, conversion_metric_id);
+            END IF;
         END $$
     """)
 

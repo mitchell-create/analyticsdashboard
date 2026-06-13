@@ -21,23 +21,27 @@ one source synced. The Slack summary reports per-source status.
 import os
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from shutil import which
 
 from prefect import flow, task
 from prefect.logging import get_run_logger
+
+
+REPORTING_LOOKBACK_DAYS = 45
 
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 def _orchestration_dir() -> Path:
     # flows -> prefect -> orchestration
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def _measurement_platform_dir() -> Path:
     # flows -> prefect -> orchestration -> measurement-platform
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 
 def load_env() -> None:
@@ -83,7 +87,8 @@ def _record_run(status: str, message: str = "") -> None:
         print(f"pipeline_runs insert failed: {e}")
 
 
-def _run_script(script_name: str, timeout: int = 1800) -> tuple[bool, str]:
+def _run_script(script_name: str, args: list[str] | None = None,
+                timeout: int = 1800) -> tuple[bool, str]:
     """Run a sync script via subprocess. Returns (success, short detail)."""
     logger = get_run_logger()
     script = _orchestration_dir() / script_name
@@ -91,7 +96,7 @@ def _run_script(script_name: str, timeout: int = 1800) -> tuple[bool, str]:
         return False, f"{script_name} not found"
     try:
         result = subprocess.run(
-            [sys.executable, str(script)],
+            [sys.executable, str(script)] + (args or []),
             cwd=str(_orchestration_dir()),
             capture_output=True,
             text=True,
@@ -118,12 +123,14 @@ def sync_meta() -> tuple[bool, str]:
 
 @task
 def sync_klaviyo() -> tuple[bool, str]:
-    return _run_script("klaviyo_sync.py")
+    start_date = (date.today() - timedelta(days=REPORTING_LOOKBACK_DAYS)).isoformat()
+    return _run_script("klaviyo_sync.py", ["--start-date", start_date])
 
 
 @task
 def sync_ga4() -> tuple[bool, str]:
-    return _run_script("ga4_sync.py")
+    start_date = (date.today() - timedelta(days=REPORTING_LOOKBACK_DAYS)).isoformat()
+    return _run_script("ga4_sync.py", ["--start-date", start_date])
 
 
 @task
@@ -133,14 +140,16 @@ def run_dbt() -> tuple[bool, str]:
     dbt_dir = os.environ.get("DBT_PROJECT_DIR", str(_measurement_platform_dir() / "dbt"))
     if not Path(dbt_dir, "dbt_project.yml").exists():
         return False, f"dbt project not found at {dbt_dir}"
+    dbt_exe = which("dbt")
+    dbt_cmd = [dbt_exe] if dbt_exe else [sys.executable, "-m", "dbt.cli.main"]
     try:
-        run = subprocess.run(["dbt", "run"], cwd=dbt_dir,
+        run = subprocess.run(dbt_cmd + ["run"], cwd=dbt_dir,
                              capture_output=True, text=True, timeout=3600)
         if run.returncode != 0:
             err = (run.stderr or run.stdout or "")[-300:]
             logger.error(f"dbt run failed: {err}")
             return False, f"dbt run failed: {err}"
-        test = subprocess.run(["dbt", "test"], cwd=dbt_dir,
+        test = subprocess.run(dbt_cmd + ["test"], cwd=dbt_dir,
                               capture_output=True, text=True, timeout=1200)
     except subprocess.TimeoutExpired:
         return False, "dbt timed out"
