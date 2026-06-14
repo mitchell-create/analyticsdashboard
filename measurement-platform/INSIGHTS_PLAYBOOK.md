@@ -25,7 +25,7 @@ fatigue; refresh the top-spending ad sets before scaling further"** (actionable)
 
 **Caveats to state honestly in any analysis:**
 - **Revenue is GA4 purchase events**, not Shopify orders — a directional signal, not penny-accurate. Good for trends, not finance.
-- **Google has spend/impr/clicks only** (no conversions/ROAS yet) — so Google diagnostics are limited to cost/efficiency (CTR/CPM/CPC), not return. (Extension: add conversion metrics to `google_ads_sync.py`.)
+- **Google** has conversions + value in `raw.google_account_performance_report` (`metrics_conversions`, `metrics_conversions_value`) → Google ROAS = conversions_value / spend, same idea as Meta. Populated by `google_ads_sync.py` from 2026-06-14 on; older rows may be NULL, so date-bound your queries.
 - **chubble** has no GA4 property → no revenue/funnel signal for it.
 - Meta ROAS uses `action_values → omni_purchase` (platform-attributed), which overcounts vs. true incrementality.
 
@@ -38,7 +38,7 @@ CTR   = clicks / impressions
 CPM   = spend / impressions * 1000
 CPC   = spend / clicks
 Freq  = impressions / reach            (Meta only, from raw table)
-ROAS  = conversion_value / spend       (Meta: omni_purchase value; Google: n/a)
+ROAS  = conversion_value / spend       (Meta: omni_purchase value; Google: metrics_conversions_value)
 MER   = GA4 purchase_revenue / total ad spend   (blended efficiency)
 Conv-rate = purchases / sessions       (GA4 overall_conversion_rate)
 ```
@@ -99,6 +99,21 @@ from raw.meta_customaccount_insights_daily d
 join public_marts.client_ad_accounts c on d.account_id = c.account_id
 where c.client_slug = :client and c.platform='meta' and d.date_start > :asof - 14
 group by 1 having case when d.date_start > :asof - 7 then 'cur_7' when d.date_start > :asof - 14 then 'prev_7' end is not null;
+```
+
+**Google conversions + ROAS** (from the raw Google table):
+
+```sql
+select
+  case when segments_date > :asof - 7 then 'cur_7' when segments_date > :asof - 14 then 'prev_7' end as bucket,
+  round(sum(metrics_cost_micros)/1e6, 2) spend,
+  round(sum(metrics_conversions), 1) conversions,
+  round(sum(metrics_conversions_value), 2) conv_value,
+  round(sum(metrics_conversions_value) / nullif(sum(metrics_cost_micros)/1e6, 0), 2) roas
+from raw.google_account_performance_report d
+join public_marts.client_ad_accounts c on d.customer_id::text = c.account_id
+where c.client_slug = :client and c.platform='google' and segments_date > :asof - 14
+group by 1 having case when segments_date > :asof - 7 then 'cur_7' when segments_date > :asof - 14 then 'prev_7' end is not null;
 ```
 
 **GA4 funnel** (where conversions break):
@@ -165,6 +180,5 @@ Apply after computing % changes. Thresholds are defaults — tune per client.
 
 ## 7. Extensions (not built yet)
 
-- Add Google conversions/value to `google_ads_sync.py` → enables Google ROAS diagnostics.
 - Materialize a `vw_metrics_comparison` view for speed/consistency.
 - Auto-post: wrap this in a Prefect flow that runs after the weekly sync and posts per-client to Slack (deferred by choice — on-demand for now).

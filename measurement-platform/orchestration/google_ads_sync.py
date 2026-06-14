@@ -48,7 +48,8 @@ MAX_RETRIES = 4
 
 GAQL = (
     "SELECT customer.id, segments.date, metrics.cost_micros, "
-    "metrics.impressions, metrics.clicks "
+    "metrics.impressions, metrics.clicks, "
+    "metrics.conversions, metrics.conversions_value "
     "FROM customer "
     "WHERE segments.date BETWEEN '{start}' AND '{end}'"
 )
@@ -129,12 +130,15 @@ def fetch_account_metrics(customer_id, access_token, dev_token, login_customer_i
     rows = []
     for batch in resp.json():  # searchStream returns a list of result batches
         for r in batch.get("results", []):
+            m = r["metrics"]
             rows.append({
                 "customer_id": r["customer"]["id"],
                 "segments_date": r["segments"]["date"],
-                "metrics_cost_micros": int(r["metrics"].get("costMicros", 0)),
-                "metrics_impressions": int(r["metrics"].get("impressions", 0)),
-                "metrics_clicks": int(r["metrics"].get("clicks", 0)),
+                "metrics_cost_micros": int(m.get("costMicros", 0)),
+                "metrics_impressions": int(m.get("impressions", 0)),
+                "metrics_clicks": int(m.get("clicks", 0)),
+                "metrics_conversions": float(m.get("conversions", 0)),
+                "metrics_conversions_value": float(m.get("conversionsValue", 0)),
             })
     return rows
 
@@ -149,29 +153,49 @@ def get_db_connection():
     return psycopg2.connect(db_url, connect_timeout=20)
 
 
+DATA_FIELDS = [
+    "customer_id", "segments_date", "metrics_cost_micros",
+    "metrics_impressions", "metrics_clicks",
+    "metrics_conversions", "metrics_conversions_value",
+]
+
+
+def _table_columns(cur, schema, table):
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema=%s AND table_name=%s",
+        (schema, table),
+    )
+    return {r[0] for r in cur.fetchall()}
+
+
 def replace_account_range(conn, customer_id, start_date, end_date, rows, dry_run=False):
     if dry_run:
         return len(rows)
     cur = conn.cursor()
     try:
+        schema, table = RAW_TABLE.split(".")
+        cols = _table_columns(cur, schema, table)
+        meta = {
+            "_airbyte_raw_id": lambda r: str(uuid.uuid4()),
+            "_airbyte_extracted_at": lambda r: datetime.now(timezone.utc),
+            "_airbyte_meta": lambda r: json.dumps({"source": "google_ads_sync.py"}),
+            "_airbyte_generation_id": lambda r: 0,
+        }
+        meta_fields = [c for c in meta if c in cols]
+        data_fields = [f for f in DATA_FIELDS if f in cols]
+        insert_cols = meta_fields + data_fields
+        placeholders = ", ".join(["%s"] * len(insert_cols))
+        col_sql = ", ".join(f'"{c}"' for c in insert_cols)
+
         cur.execute(
             f"DELETE FROM {RAW_TABLE} WHERE customer_id::text = %s "
             f"AND segments_date::date BETWEEN %s AND %s",
             (customer_id, start_date, end_date),
         )
         for r in rows:
-            cur.execute(
-                f"""INSERT INTO {RAW_TABLE} (
-                        _airbyte_raw_id, _airbyte_extracted_at, _airbyte_meta, _airbyte_generation_id,
-                        customer_id, segments_date, metrics_cost_micros,
-                        metrics_impressions, metrics_clicks
-                    ) VALUES (%s, now(), %s, 0, %s, %s, %s, %s, %s)""",
-                (
-                    str(uuid.uuid4()), json.dumps({"source": "google_ads_sync.py"}),
-                    r["customer_id"], r["segments_date"], r["metrics_cost_micros"],
-                    r["metrics_impressions"], r["metrics_clicks"],
-                ),
-            )
+            vals = [meta[c](r) for c in meta_fields] + [r.get(c) for c in data_fields]
+            cur.execute(f"INSERT INTO {RAW_TABLE} ({col_sql}) VALUES ({placeholders})", vals)
         conn.commit()
         return len(rows)
     except Exception:
@@ -221,6 +245,7 @@ def run(start_date=None, end_date=None, client_filter=None, dry_run=False):
     conn = None if dry_run else get_db_connection()
     grand_rows = 0
     grand_spend = 0.0
+    grand_conv_val = 0.0
     for acct in accounts:
         print(f"\n  {acct['slug']} ({acct['customer_id']})", end="")
         try:
@@ -232,17 +257,22 @@ def run(start_date=None, end_date=None, client_filter=None, dry_run=False):
             print(f"\n    ERROR: {e}")
             continue
         spend = sum(r["metrics_cost_micros"] for r in rows) / 1e6
-        print(f"  {len(rows)} daily rows | spend ${spend:,.2f}", end="")
+        conv_val = sum(r.get("metrics_conversions_value", 0) for r in rows)
+        roas = conv_val / spend if spend else 0
+        print(f"  {len(rows)} rows | spend ${spend:,.2f} | conv ${conv_val:,.2f} | ROAS {roas:.2f}x", end="")
         written = replace_account_range(conn, acct["customer_id"], start_date, end_date, rows, dry_run)
         print(f" -> {'(dry-run) ' if dry_run else ''}{written} rows")
         grand_rows += len(rows)
         grand_spend += spend
+        grand_conv_val += conv_val
     if conn:
         conn.close()
 
     print(f"\n{'='*60}")
     print(f"DONE - {grand_rows} daily rows across {len(accounts)} account(s)")
-    print(f"  Total spend: ${grand_spend:,.2f}")
+    print(f"  Total spend:      ${grand_spend:,.2f}")
+    print(f"  Total conv value: ${grand_conv_val:,.2f}")
+    print(f"  Blended ROAS:     {grand_conv_val / grand_spend if grand_spend else 0:.2f}x")
 
 
 if __name__ == "__main__":
