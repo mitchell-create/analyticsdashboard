@@ -12,6 +12,37 @@ fatigue; refresh the top-spending ad sets before scaling further"** (actionable)
 
 ---
 
+## 0. Before you diagnose — check data completeness (READ FIRST)
+
+Sources lag. **GA4 processes data with a 24–48h delay**, so the most recent 1–2
+days are *incomplete*, and the warehouse only holds what the last sync captured.
+If your window includes those trailing days, **every metric looks like it
+dropped** — revenue, sessions, email/social attribution — purely from missing
+data, not a real decline. This is the #1 cause of false alarms.
+
+Two rules:
+1. **Analyze complete periods.** Default `:asof = current_date - 2` so "this
+   week" is the last 7 *fully-settled* days. State the exact dates you used.
+2. **A metric that collapses to ~0 or drops >50% in a week is a data-completeness
+   suspect first, a business event second.** Before diagnosing ("email revenue
+   cratered"), confirm the source has complete rows for the period — check
+   `max(report_date)` and per-day row counts. Only call it real once the data is
+   confirmed complete. Klaviyo/GA4-attributed channel revenue is especially
+   prone to this.
+
+```sql
+-- Completeness probe: run before any analysis. Look for a clean daily cadence
+-- up to (:asof) and flag the last settled date per source.
+select 'ga4'  src, max(report_date) last_day, count(distinct report_date) days
+  from public_marts.fact_ga4_funnel_daily where client_slug = :client and report_date > :asof - 14
+union all select 'spend', max(report_date), count(distinct report_date)
+  from public_marts.fact_spend_daily     where client_slug = :client and report_date > :asof - 14
+union all select 'klaviyo', max(report_date), count(distinct report_date)
+  from public_marts.fact_klaviyo_daily   where client_slug = :client and report_date > :asof - 14;
+```
+
+---
+
 ## 1. Data sources (warehouse: local Postgres, schema `public_marts` + `raw`)
 
 | Need | Table | Key columns |
@@ -171,7 +202,7 @@ Apply after computing % changes. Thresholds are defaults — tune per client.
 
 ## 6. Period options
 
-- **Weekly review (default):** last 7d vs prior 7d, `:asof = current_date`.
+- **Weekly review (default):** last 7d vs prior 7d, `:asof = current_date - 2` (skip GA4's incomplete trailing 1–2 days; see §0). Don't default to `current_date` or the latest days will read as a false drop.
 - **Smoothed/trend:** last 30d vs prior 30d (less noise, catches slow drifts).
 - **Custom:** set `:asof` to any date to analyze a past week (e.g. `:asof = '2026-06-08'`).
 - Use **both 7d and 30d** when they disagree — a 7d dip inside a healthy 30d trend is often noise; a 30d decline is structural.
