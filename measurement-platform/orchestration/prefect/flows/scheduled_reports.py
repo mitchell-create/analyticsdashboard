@@ -1,5 +1,5 @@
 """
-scheduled_reports.py — Automated Chellegum performance reports posted to Slack.
+scheduled_reports.py — Automated Chubble Gum performance reports posted to Slack.
 
 Schedules:
   - 1st of every month: previous full month of data
@@ -300,7 +300,7 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
 
 @task
 def fetch_report_data(start_date: date, end_date: date) -> dict:
-    """Query Chellegum metrics for the given date range.
+    """Query Chubble Gum metrics for the given date range.
 
     Primary: direct PostgreSQL to public_marts schema (via SUPABASE_DB_URL).
     Fallback: Supabase REST API (public schema — requires views or schema exposure).
@@ -331,7 +331,7 @@ def fetch_report_data(start_date: date, end_date: date) -> dict:
 def format_report(data: dict, period_label: str) -> str:
     """Format the report data into a Slack message."""
     if not data:
-        return ":warning: *Chellegum Report*\nNo data available for this period."
+        return ":warning: *Chubble Gum Report*\nNo data available for this period."
 
     meta = data.get("meta", {})
     tiktok = data.get("tiktok_ads", {})
@@ -342,7 +342,7 @@ def format_report(data: dict, period_label: str) -> str:
     total_roas = total_pv / total_spend if total_spend > 0 else 0
 
     lines = [
-        ":bar_chart: *Chellegum Performance Report*",
+        ":bar_chart: *Chubble Gum Performance Report*",
         f"*{period_label}*",
         "",
         "*Meta*",
@@ -370,9 +370,9 @@ def format_report(data: dict, period_label: str) -> str:
     return "\n".join(lines)
 
 
-@flow(name="chellegum_scheduled_report", description="Chellegum bi-monthly performance report (1st and 14th)")
+@flow(name="chellegum_scheduled_report", description="Chubble Gum bi-monthly performance report (1st and 14th)")
 def chellegum_scheduled_report() -> None:
-    """Generate and post the Chellegum performance report to Slack.
+    """Generate and post the Chubble Gum performance report to Slack.
 
     Runs on the 1st (previous month) and 14th (last 14 days) of each month.
     Posts to the #chubblegum Slack channel (C0AEXRYPA9Y).
@@ -381,14 +381,14 @@ def chellegum_scheduled_report() -> None:
     today = date.today()
 
     start_date, end_date, period_label = _compute_period(today)
-    logger.info(f"Generating Chellegum report: {period_label} ({start_date} to {end_date})")
+    logger.info(f"Generating Chubble Gum report: {period_label} ({start_date} to {end_date})")
 
     data = fetch_report_data.submit(start_date, end_date).result()
 
     if not data:
         logger.warning("No data returned; posting warning to Slack")
         _post_slack_message(
-            ":warning: *Chellegum Report*\n"
+            ":warning: *Chubble Gum Report*\n"
             f"Period: {period_label}\n"
             "Could not fetch report data. Check database connection."
         )
@@ -398,7 +398,7 @@ def chellegum_scheduled_report() -> None:
     logger.info("Report formatted, posting to Slack")
 
     _post_slack_message(report)
-    logger.info("Chellegum report posted to #chubblegum")
+    logger.info("Chubble Gum report posted to #chubblegum")
 
 
 if __name__ == "__main__":

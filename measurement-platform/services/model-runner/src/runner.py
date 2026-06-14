@@ -16,7 +16,6 @@ from typing import List
 # Add src to path when run from service root
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from db import (
-    get_supabase,
     fetch_kpi_geo_daily,
     fetch_kpi_daily,
     fetch_tiktok_organic_daily,
@@ -58,13 +57,9 @@ def _fill_missing_dates(
 
 
 def run_geolift(experiment_slug: str, start_date: str, end_date: str, treatment_geos: str, holdout_geos: str) -> None:
-    supabase = get_supabase()
-    if not supabase:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY required")
-
     # Create experiment row
     row = insert_experiment(
-        supabase, experiment_slug, "geolift", start_date, end_date,
+        experiment_slug, "geolift", start_date, end_date,
         config={"treatment_geos": treatment_geos.split(","), "holdout_geos": holdout_geos.split(",")},
         status="running",
     )
@@ -74,7 +69,7 @@ def run_geolift(experiment_slug: str, start_date: str, end_date: str, treatment_
 
     try:
         # Export fact_kpi_geo_daily to CSV for R
-        data = fetch_kpi_geo_daily(supabase, start_date, end_date)
+        data = fetch_kpi_geo_daily(start_date, end_date)
         data_path = Path(__file__).parent / f"geolift_input_{experiment_slug}.csv"
         if data:
             with open(data_path, "w", newline="") as f:
@@ -107,22 +102,18 @@ def run_geolift(experiment_slug: str, start_date: str, end_date: str, treatment_
                     }
                     for row in r
                 ]
-            upsert_experiment_results(supabase, experiment_id, results)
-        update_experiment_status(supabase, experiment_id, "completed")
+            upsert_experiment_results(experiment_id, results)
+        update_experiment_status(experiment_id, "completed")
     except Exception as e:
-        update_experiment_status(supabase, experiment_id, "failed")
+        update_experiment_status(experiment_id, "failed")
         raise e
 
 
 def run_causalimpact(
     experiment_slug: str, start_date: str, end_date: str, intervention_date: str, metric: str = "revenue"
 ) -> None:
-    supabase = get_supabase()
-    if not supabase:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY required")
-
     row = insert_experiment(
-        supabase, experiment_slug, "causal_impact", start_date, end_date,
+        experiment_slug, "causal_impact", start_date, end_date,
         config={"intervention_date": intervention_date, "metric": metric},
         status="running",
     )
@@ -134,10 +125,10 @@ def run_causalimpact(
         # Export daily series: for revenue/orders use fact_kpi_daily; for views use fact_tiktok_organic_daily
         data_path = Path(__file__).parent / f"causalimpact_input_{experiment_slug}.csv"
         if metric in ("revenue", "orders"):
-            data = fetch_kpi_daily(supabase, start_date, end_date)
+            data = fetch_kpi_daily(start_date, end_date)
             fieldnames = ["report_date", "revenue", "orders"]
         else:
-            data = fetch_tiktok_organic_daily(supabase, start_date, end_date)
+            data = fetch_tiktok_organic_daily(start_date, end_date)
             fieldnames = ["report_date", "views", "likes", "comments", "shares", "followers"]
         # Fill missing dates with zeros so CausalImpact gets a complete daily time series
         data = _fill_missing_dates(data, start_date, end_date, fieldnames)
@@ -169,10 +160,10 @@ def run_causalimpact(
                     }
                     for row in r
                 ]
-            upsert_experiment_results(supabase, experiment_id, results)
-        update_experiment_status(supabase, experiment_id, "completed")
+            upsert_experiment_results(experiment_id, results)
+        update_experiment_status(experiment_id, "completed")
     except Exception as e:
-        update_experiment_status(supabase, experiment_id, "failed")
+        update_experiment_status(experiment_id, "failed")
         raise
 
 

@@ -1,4 +1,6 @@
--- stg_meta_spend — Staging for Meta Ads daily spend (from Airbyte raw)
+-- stg_meta_spend — Staging for Meta Ads daily spend.
+-- Source: raw.meta_customaccount_insights_daily (account-level daily, populated
+-- by meta_sync.py via the Marketing API). One row per account per day.
 -- Outputs account_id for joining with client_ad_accounts to assign client_slug.
 
 {{
@@ -9,7 +11,7 @@
 }}
 
 with source as (
-  select * from {{ source('raw_airbyte', 'meta_ads_insights') }}
+  select * from {{ source('raw_airbyte', 'meta_customaccount_insights_daily') }}
 ),
 
 renamed as (

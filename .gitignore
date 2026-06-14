@@ -4,6 +4,22 @@
 .env.*.local
 *.env
 
+# Local secrets / credentials (never commit)
+measurement-platform/services/slack-bot/clients.json
+measurement-platform/airbyte-ga4-key.json
+measurement-platform/ga4_user_credentials.json
+**/airbyte-*-key.json
+**/service-account*.json
+**/*credentials*.json
+*.pem
+*.key
+**/secrets.local.json
+.pgpass
+
+# Local Claude Code agent state (never commit)
+.claude/
+**/.claude/
+
 # dbt
 measurement-platform/dbt/profiles.yml
 measurement-platform/dbt/target/

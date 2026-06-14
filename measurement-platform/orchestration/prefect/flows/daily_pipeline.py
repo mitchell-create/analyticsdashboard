@@ -93,24 +93,20 @@ def run_dbt_test() -> bool:
 
 @task
 def record_pipeline_run(status: str, flow_name: str, message: str = "") -> None:
-    """Record run in pipeline_runs (Supabase)."""
+    """Record run in pipeline_runs via direct Postgres."""
     logger = get_run_logger()
     try:
-        from supabase import create_client
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_SERVICE_KEY")
-        if not url or not key:
-            logger.warning(f"Record pipeline run SKIPPED: SUPABASE_URL or SUPABASE_SERVICE_KEY not set (url={bool(url)}, key={bool(key)})")
+        from _db import execute
+        now_utc = datetime.now(timezone.utc)
+        ok = execute(
+            """INSERT INTO public.pipeline_runs
+                 (run_date, flow_name, status, started_at, finished_at, message)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (date.today(), flow_name, status, now_utc, now_utc, message or None),
+        )
+        if not ok:
+            logger.warning("Record pipeline run SKIPPED: SUPABASE_DB_URL not set")
             return
-        client = create_client(url, key)
-        client.table("pipeline_runs").insert({
-            "run_date": date.today().isoformat(),
-            "flow_name": flow_name,
-            "status": status,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-            "message": message or None,
-        }).execute()
         logger.info(f"Record pipeline run OK: status={status}")
     except Exception as e:
         logger.error(f"Record pipeline run failed: {e}")

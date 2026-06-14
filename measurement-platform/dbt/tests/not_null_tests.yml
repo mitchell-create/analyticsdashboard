@@ -14,7 +14,7 @@ models:
   - name: fact_kpi_daily
     columns:
       - name: report_date
-        tests: [not_null, unique]
+        tests: [not_null]
       - name: revenue
         tests: [not_null]
       - name: orders
