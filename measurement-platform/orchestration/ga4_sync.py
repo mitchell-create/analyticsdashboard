@@ -47,6 +47,20 @@ def load_env():
                     os.environ.setdefault(key.strip(), val.strip())
 
 
+def load_ga4_properties():
+    """Read GA4 properties from the client_ad_accounts seed -> {property_id: client_slug}.
+    Falls back to the hardcoded GA4_PROPERTIES if the seed has no ga4 rows."""
+    import csv
+    seed = Path(__file__).resolve().parent.parent / "dbt" / "seeds" / "client_ad_accounts.csv"
+    props = {}
+    if seed.exists():
+        with open(seed, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("platform", "").strip().lower() == "ga4":
+                    props[row["account_id"].strip()] = row["client_slug"].strip()
+    return props or GA4_PROPERTIES
+
+
 # ─── GA4 Data API ─────────────────────────────────────────────────────────────
 
 
@@ -401,7 +415,7 @@ def sync_all(start_date=None, end_date=None, property_filter=None, dry_run=False
     if not end_date:
         end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    properties = GA4_PROPERTIES
+    properties = load_ga4_properties()
     if property_filter:
         properties = {k: v for k, v in properties.items() if k == property_filter}
         if not properties:
