@@ -149,6 +149,10 @@ def run_dbt() -> tuple[bool, str]:
     dbt_exe = which("dbt")
     dbt_cmd = [dbt_exe] if dbt_exe else [sys.executable, "-m", "dbt.cli.main"]
     try:
+        # Refresh seeds first so client_ad_accounts stays in sync with the CSV
+        # (new accounts/clients won't reach the marts otherwise).
+        subprocess.run(dbt_cmd + ["seed"], cwd=dbt_dir,
+                       capture_output=True, text=True, timeout=600)
         run = subprocess.run(dbt_cmd + ["run"], cwd=dbt_dir,
                              capture_output=True, text=True, timeout=3600)
         if run.returncode != 0:

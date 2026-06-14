@@ -25,7 +25,7 @@ fatigue; refresh the top-spending ad sets before scaling further"** (actionable)
 
 **Caveats to state honestly in any analysis:**
 - **Revenue is GA4 purchase events**, not Shopify orders — a directional signal, not penny-accurate. Good for trends, not finance.
-- **Google** has conversions + value in `raw.google_account_performance_report` (`metrics_conversions`, `metrics_conversions_value`) → Google ROAS = conversions_value / spend, same idea as Meta. Populated by `google_ads_sync.py` from 2026-06-14 on; older rows may be NULL, so date-bound your queries.
+- **Google** has conversions + value in `raw.google_account_performance_report` (`metrics_conversions`, `metrics_conversions_value`) → Google ROAS = conversions_value / spend. Populated by `google_ads_sync.py` from 2026-06-14 on; older rows may be NULL, so date-bound your queries. **Both Meta and Google ROAS are platform-self-attributed and run HIGH** (last-click/data-driven, double-counting across channels — e.g. Google may claim 14x while the site's blended MER is ~3x). Always cross-check a platform ROAS against GA4 `purchase_revenue` and the blended MER before reporting it as truth; describe it as "Google-reported ROAS," and lean on **directional change** (ROAS down 30% w/w) over the absolute number.
 - **chubble** has no GA4 property → no revenue/funnel signal for it.
 - Meta ROAS uses `action_values → omni_purchase` (platform-attributed), which overcounts vs. true incrementality.
 
