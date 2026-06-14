@@ -39,7 +39,7 @@ import requests
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-API_VERSION = "v18"  # bump if the API returns a version/deprecation error
+API_VERSION = "v20"  # v18/v19 are sunset (404); bump if a version error appears
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 RAW_TABLE = "raw.google_account_performance_report"
 DEFAULT_LOOKBACK_DAYS = 45
