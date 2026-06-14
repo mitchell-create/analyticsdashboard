@@ -60,37 +60,14 @@ deployments:
         SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
 
-  # Data sync — direct-API pull (Meta/Klaviyo/GA4) + dbt build.
-  # Runs the day before the 14th report, at 2am ET, so fresh data lands first.
+  # Data sync — WEEKLY direct-API pull (Meta/Google/Klaviyo/GA4) + dbt build.
+  # Runs Sunday 11:59 PM ET so every new week opens with fresh data + marts.
   # The flow self-loads measurement-platform/.env for all credentials.
-  - name: data-sync-13th
+  - name: data-sync-weekly
     entrypoint: orchestration/prefect/flows/data_sync.py:data_sync
-    description: "Direct-API sync (Meta/Klaviyo/GA4) + dbt — feeds the 14th report"
+    description: "Weekly direct-API sync (Meta/Google/Klaviyo/GA4) + dbt (Sun 11:59pm ET)"
     schedule:
-      cron: "0 2 13 * *"
-      timezone: "America/New_York"
-    work_pool:
-      name: default-agent-pool
-    parameters: {}
-    job_variables:
-      env:
-        SUPABASE_DB_URL: "{{ $SUPABASE_DB_URL }}"
-        META_ACCESS_TOKEN: "{{ $META_ACCESS_TOKEN }}"
-        KLAVIYO_CLIENTS_JSON: "{{ $KLAVIYO_CLIENTS_JSON }}"
-        DBT_PROJECT_DIR: "{{ $DBT_PROJECT_DIR }}"
-        Path: "{{ $Path }}"
-        SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
-        SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
-
-  # Data sync — runs early on the 1st (2am ET) so the full previous month is
-  # captured before the 9am "previous full month" report.
-  # Uses the 1st (which always exists) instead of the 31st, which silently
-  # skipped 30-day months in the old Airbyte schedule.
-  - name: data-sync-1st
-    entrypoint: orchestration/prefect/flows/data_sync.py:data_sync
-    description: "Direct-API sync (Meta/Klaviyo/GA4) + dbt — feeds the 1st report"
-    schedule:
-      cron: "0 2 1 * *"
+      cron: "59 23 * * 0"
       timezone: "America/New_York"
     work_pool:
       name: default-agent-pool
