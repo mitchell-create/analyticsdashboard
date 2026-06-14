@@ -1,68 +1,110 @@
 """
-ga4_auth.py — One-time OAuth flow to get a refresh token for GA4 Data API.
-Uses your Airbyte OAuth client credentials with a local redirect.
+ga4_auth.py — Mint a refresh token for the GA4 Data API (scope:
+analytics.readonly), saved WITH the client_secret so ga4_sync.py can refresh
+it. Authenticates as the signed-in user, so it uses whatever GA4 properties
+that user already has access to — no service-account grants needed.
+
+Reuses the gcloud-adc Desktop OAuth client (same one set up for Google Ads).
+Client id/secret are resolved in this order:
+  1. %APPDATA%\\gcloud\\ads_mcp_oauth_client.json  (the existing Desktop client)
+  2. env GA4_OAUTH_CLIENT_ID / GA4_OAUTH_CLIENT_SECRET
+  3. env GOOGLE_ADS_CLIENT_ID / GOOGLE_ADS_CLIENT_SECRET
+  4. interactive prompt
 
 Usage:
-    python ga4_auth.py
+    cd measurement-platform
+    python orchestration\\ga4_auth.py
+    # a browser opens — sign in as the account with access to the client GA4
+    # properties (e.g. mitchell@nexocore.ca), then approve.
 
-Saves credentials to ga4_user_credentials.json for use by ga4_sync.py.
+Writes ga4_user_credentials.json next to .env (overwrites any existing one).
+Transfer that file to the dedicated PC (ga4_sync.py reads it as priority-1 auth).
 """
 
 import json
+import os
+import sys
 from pathlib import Path
+
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
 
-# Use your existing Airbyte OAuth client (Web Application type)
-# We configure it as an installed app flow with loopback redirect
-CLIENT_CONFIG = {
-    "installed": {
-        "client_id": "267707809897-djd46ripcrin1t1q1p6uetf9rd1mjiv1.apps.googleusercontent.com",
-        "client_secret": "",  # Will be filled from user input
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-        "redirect_uris": ["http://localhost"],
-    }
-}
+
+def _load_env():
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+
+
+def _resolve_client():
+    """Return (client_id, client_secret) from the gcloud client file, env, or prompt."""
+    # 1. The existing gcloud-adc Desktop client file
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        gcloud_file = Path(appdata) / "gcloud" / "ads_mcp_oauth_client.json"
+        if gcloud_file.exists():
+            try:
+                cfg = json.loads(gcloud_file.read_text())
+                node = cfg.get("installed") or cfg.get("web") or {}
+                if node.get("client_id") and node.get("client_secret"):
+                    print(f"  Using OAuth client from {gcloud_file}")
+                    return node["client_id"], node["client_secret"]
+            except Exception as e:
+                print(f"  Could not read {gcloud_file}: {e}")
+
+    # 2/3. Env vars
+    cid = os.environ.get("GA4_OAUTH_CLIENT_ID") or os.environ.get("GOOGLE_ADS_CLIENT_ID")
+    csec = os.environ.get("GA4_OAUTH_CLIENT_SECRET") or os.environ.get("GOOGLE_ADS_CLIENT_SECRET")
+    if cid and csec:
+        return cid, csec
+
+    # 4. Prompt
+    cid = cid or input("OAuth Client ID: ").strip()
+    csec = csec or input("OAuth Client Secret: ").strip()
+    return cid, csec
+
 
 def main():
-    creds_path = Path(__file__).resolve().parent.parent / "ga4_user_credentials.json"
+    _load_env()
+    client_id, client_secret = _resolve_client()
+    if not client_id or not client_secret:
+        print("ERROR: client_id and client_secret are required")
+        sys.exit(1)
 
-    # Check if credentials already exist
-    if creds_path.exists():
-        print(f"Credentials already exist at {creds_path}")
-        print("Delete the file to re-authenticate.")
-        return
-
-    # Get client secret
-    print("Enter your Google OAuth Client Secret")
-    print("(from Google Cloud Console > APIs & Services > Credentials > Airbyte client)")
-    secret = input("Client Secret: ").strip()
-    if not secret:
-        print("ERROR: Client secret is required")
-        return
-
-    CLIENT_CONFIG["installed"]["client_secret"] = secret
-
-    # Run OAuth flow
-    flow = InstalledAppFlow.from_client_config(CLIENT_CONFIG, SCOPES)
+    client_config = {
+        "installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost"],
+        }
+    }
+    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
     creds = flow.run_local_server(port=8090, prompt="consent")
 
-    # Save credentials
-    creds_data = {
+    out = {
         "token": creds.token,
         "refresh_token": creds.refresh_token,
         "token_uri": creds.token_uri,
         "client_id": creds.client_id,
-        "client_secret": creds.client_secret,
+        "client_secret": creds.client_secret,  # included so ga4_sync.py can refresh
         "scopes": list(creds.scopes),
     }
-    with open(creds_path, "w") as f:
-        json.dump(creds_data, f, indent=2)
-
-    print(f"\nCredentials saved to {creds_path}")
-    print("You can now run ga4_sync.py")
+    creds_path = Path(__file__).resolve().parent.parent / "ga4_user_credentials.json"
+    creds_path.write_text(json.dumps(out, indent=2))
+    print("\n" + "=" * 60)
+    print(f"Saved {creds_path}")
+    print(f"  refresh_token present: {bool(creds.refresh_token)}")
+    print(f"  client_secret present: {bool(creds.client_secret)}")
+    print("Transfer this file to the dedicated PC's measurement-platform/ dir.")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
