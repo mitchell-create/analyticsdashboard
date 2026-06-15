@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: stg_meta_ad_creative
+    description: >
+      Ad-level Meta creative staging. Parses the ad-name naming convention
+      ([Brand]_[Persona]_[Angle]_[Format]_[Style]_[Source]_[Hook]_[Copy]_[Offer]_[Iteration]_[Date])
+      into dimensions and extracts conversion counts from the actions jsonb.
+      One row per ad per day. parse_ok flags names that don't split into 11 fields.
+    columns:
+      - name: ad_id
+        tests: [not_null]
+      - name: report_date
+        tests: [not_null]
+
+  - name: fact_creative_daily
+    description: >
+      Daily Meta creative performance by client + parsed creative dimensions
+      (playbook §4.3). Counts at ad/day grain; rates computed over summed counts.
+    columns:
+      - name: client_slug
+        tests: [not_null]
+      - name: report_date
+        tests: [not_null]
+      - name: ad_id
+        tests: [not_null]

@@ -304,47 +304,55 @@ same `jsonb_array_elements` pattern as the omni_purchase query in §3.)
 - **Compare like with like** — settled window (§0), and same objective (a prospecting ad and a retargeting ad aren't peers).
 - **Separate "new & unproven" from "tested & losing."** A 3-day-old ad with thin data isn't a loser yet.
 
-**Starter query** — creative panel per ad over a settled window, winners first, thin-spend filtered:
+**Queries** (from `fact_creative_daily` — counts summed, rates computed over the sums):
 
 ```sql
-with ad as (
-  select ad_id, max(ad_name) ad_name,
-    sum(spend) spend, sum(impressions) impr, sum(inline_link_clicks) link_clicks,
-    sum(video_3s_views) v3s, sum(video_thruplays) thru,
-    sum( (select coalesce(sum((a->>'value')::numeric),0) from jsonb_array_elements(actions) a
-          where a->>'action_type' = 'omni_add_to_cart') )                    atc,
-    sum( (select coalesce(sum((a->>'value')::numeric),0) from jsonb_array_elements(actions) a
-          where a->>'action_type' = 'omni_purchase') )                       purch,
-    sum( (select coalesce(sum((v->>'value')::numeric),0) from jsonb_array_elements(action_values) v
-          where v->>'action_type' = 'omni_purchase') )                       conv_value
-  from raw.meta_ad_insights_daily d
-  join public_marts.client_ad_accounts c on d.account_id = c.account_id
-  where c.client_slug = :client and c.platform = 'meta'
-    and d.date_start between :asof - 30 and :asof - 2
-  group by ad_id
-)
-select ad_name,
-  round(spend, 2)                                          spend,
-  round(link_clicks::numeric / nullif(impr,0) * 100, 2)    link_ctr_pct,
-  round(v3s::numeric  / nullif(impr,0) * 100, 1)           hook_rate_pct,
-  round(thru::numeric / nullif(impr,0) * 100, 1)           hold_rate_pct,
-  round(atc::numeric  / nullif(link_clicks,0) * 100, 1)    atc_rate_pct,
-  round(spend / nullif(purch,0), 2)                        cpa,
-  round(conv_value / nullif(spend,0), 2)                   roas
-from ad
-where spend >= 200          -- significance floor; tune per client
+-- 1) Coverage first: what % of spend has a parseable name?
+--    Low coverage => fix naming before trusting any theme rollup.
+select round(100.0 * sum(spend) filter (where parse_ok) / nullif(sum(spend),0), 1) as pct_spend_parsed
+from public_marts.fact_creative_daily
+where client_slug = :client and report_date between :asof - 30 and :asof - 2;
+
+-- 2) Per-creative panel, winners first, thin spend filtered
+select ad_name, format,
+  round(sum(spend),2)                                                    spend,
+  round(sum(link_clicks)::numeric     / nullif(sum(impressions),0)*100,2) link_ctr_pct,
+  round(sum(video_3s_views)::numeric  / nullif(sum(impressions),0)*100,1) hook_rate_pct,
+  round(sum(video_thruplays)::numeric / nullif(sum(impressions),0)*100,1) hold_rate_pct,
+  round(sum(add_to_cart)::numeric     / nullif(sum(link_clicks),0)*100,1) atc_rate_pct,
+  round(sum(spend)            / nullif(sum(purchases),0),2)              cpa,
+  round(sum(conversion_value) / nullif(sum(spend),0),2)                 roas
+from public_marts.fact_creative_daily
+where client_slug = :client and report_date between :asof - 30 and :asof - 2
+group by ad_name, format
+having sum(spend) >= 200          -- significance floor; tune per client
+order by roas desc nulls last;
+
+-- 3) Theme-level: swap `angle` for hook / format / persona / offer
+select angle,
+  round(sum(spend),2)                                                    spend,
+  round(sum(link_clicks)::numeric     / nullif(sum(impressions),0)*100,2) link_ctr_pct,
+  round(sum(video_3s_views)::numeric  / nullif(sum(impressions),0)*100,1) hook_rate_pct,
+  round(sum(spend)            / nullif(sum(purchases),0),2)              cpa,
+  round(sum(conversion_value) / nullif(sum(spend),0),2)                 roas
+from public_marts.fact_creative_daily
+where client_slug = :client and report_date between :asof - 30 and :asof - 2
+  and parse_ok                    -- theme rollups only over conforming names
+group by angle
+having sum(spend) >= 200
 order by roas desc nulls last;
 ```
 
-Swap `group by ad_id` for `group by angle` / `hook` / `format` once
-`stg_meta_ad_creative` is built (after the naming convention lands). For fatigue,
-trend `hook_rate_pct` / `link_ctr_pct` and `frequency` by week for each winning ad.
+For **fatigue**, trend `hook_rate_pct` / `link_ctr_pct` and `frequency` by week for
+each winning ad — a winner whose hook rate decays as frequency climbs is due for a
+refresh.
 
-> **Naming convention required.** The by-dimension rollups depend on the parser,
-> which is built from Mitchell's Meta ad naming convention (delimiter + field
-> order + which positions are angle/hook/format). Until that lands, group by
-> `ad_name` / `adset_name`. Names that don't match the convention are bucketed
-> `unparsed` so coverage is visible, never silently dropped.
+> **Naming convention** (parsed by `stg_meta_ad_creative`):
+> `[Brand]_[Persona]_[Angle]_[Format]_[Style]_[Source]_[Hook]_[Copy]_[Offer]_[Iteration]_[Date]`,
+> underscore-delimited. Names that don't split into 11 fields are kept (spend still
+> counts) but `parse_ok = false` — always check coverage (query 1) before trusting a
+> theme rollup. `format` is canonicalized best-effort (video/image/carousel/ugc);
+> `format_raw` keeps the original token.
 
 ---
 

@@ -13,6 +13,8 @@ sources:
         description: Meta Ads ad-level insights (legacy Airbyte; historical archive)
       - name: meta_customaccount_insights_daily
         description: Meta Ads account-level daily insights (meta_sync.py direct API). Primary Meta spend source.
+      - name: meta_ad_insights_daily
+        description: Meta Ads AD-level daily insights (meta_creative_sync.py). Creative analysis — playbook §4.3.
       - name: google_account_performance_report
         description: Google Ads account performance (Airbyte)
       - name: tiktok_advertisers_reports_daily
