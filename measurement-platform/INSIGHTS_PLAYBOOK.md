@@ -21,6 +21,10 @@ If your window includes those trailing days, **every metric looks like it
 dropped** — revenue, sessions, email/social attribution — purely from missing
 data, not a real decline. This is the #1 cause of false alarms.
 
+Also **read the client's memory file** (`insights/clients/<slug>.md`, see §7)
+before you start — it carries the standing context and the threads we said we'd
+watch, so each report builds on the last instead of starting cold.
+
 Two rules:
 1. **Analyze complete periods.** Default `:asof = current_date - 2` so "this
    week" is the last 7 *fully-settled* days. State the exact dates you used.
@@ -187,6 +191,77 @@ Apply after computing % changes. Thresholds are defaults — tune per client.
 
 ---
 
+## 4.1 Drill down to root cause (the why behind the why)
+
+§4 gives the *first* layer. Don't stop there — ask "why" 2–3 times until you hit
+something **actionable** (a lever we can pull) or **external** (a market force). A
+client doesn't want "CPM is up"; they want *why* it's up and whether it's on us or
+the market.
+
+Walk the chain. Example ladders:
+
+- **CPM up** → it costs more to reach the same people → *why?* → either **(a)** our
+  engagement/relevance slipped (CTR soft, more people scrolling past) so the
+  auction charges us more, or **(b)** the auction itself got hotter — seasonal or
+  competitive, everyone's CPM is up. (a) is on us; (b) is the market → §4.2.
+- **CTR down** → fewer people clicking → *why?* → **creative fatigue** (frequency
+  climbing, same ads running for weeks), **wrong audience** (recently widened or
+  changed), or **weaker offer/hook**. Check frequency, how long the creatives have
+  run, and any recent audience edits.
+- **Conversion rate down, traffic steady** → people arrive but don't buy → *why?*
+  → **site/offer** (price, a promo ended, shipping, checkout bug, out-of-stock) or
+  **market demand softening** (→ §4.2). Walk the funnel (§3 GA4 query) to find
+  *which step* leaks: view→ATC (interest/price), ATC→checkout (cart/shipping),
+  checkout→purchase (payment/trust).
+- **ROAS down while spend up** → each new dollar buys less → *why?* → scaled past
+  the efficient audience (costs climb as you push volume), creative can't carry
+  the bigger budget, or tracking lost some conversions.
+
+End every chain at one of two things:
+1. **An internal lever** — creative, audience, budget, bid, funnel, offer,
+   tracking. Name the specific action.
+2. **An external factor** — seasonality, demand, category trend, platform/policy
+   change, competition. **Verify it in §4.2 before stating it.**
+
+State confidence honestly: "frequency is 3.4 and these creatives have run 6 weeks,
+so fatigue is **likely**" — not just "fatigue."
+
+---
+
+## 4.2 Is it you or the market? (external context)
+
+The most valuable thing you can tell a client is whether a move is **their problem
+or everyone's.** "Your conversion rate fell 15%" panics them. "Your conversion
+rate fell 15%, but ecommerce conversion is down ~10% across the board this quarter
+([source]) — so most of this is the market; the extra 5% is what we're chasing"
+informs them.
+
+**When to look outward:** a metric moved materially **and** the internal data
+doesn't fully explain it (funnel rates flat but revenue down; CPM up everywhere;
+CVR down with no site change). If an internal cause fully explains it, skip this.
+
+**How to check — in order of trust:**
+1. **Your own portfolio first.** Is this happening across *several* clients at
+   once? If every account's CPM jumped this week, it's the auction/season, not
+   their creative. Six clients = a built-in control group. This is your strongest,
+   cheapest signal — use it before the web.
+2. **Platform benchmark tools**, if available to you (e.g. Meta's industry-
+   benchmark / performance-trend endpoints) — category-level CPM/CTR/CVR trends.
+3. **The web.** Search category + metric + timeframe: "ecommerce conversion rate
+   trend Q2 2026", "Meta CPM increase June 2026", consumer-confidence / retail-
+   spending headlines, platform policy or algorithm changes, seasonal effects
+   (holidays, back-to-school, weather).
+
+**Rigor — don't hand-wave a macro story:**
+- **Cite the source + date.** No source → it's a hypothesis, not a fact; say so.
+- **Quantify if you can.** "Industry CVR down ~10% ([source])" beats "things are soft."
+- **Prefer the portfolio check** — your own clients are the cleanest benchmark.
+- **If you find nothing, say so:** "no clear market driver found — looks
+  client-specific." Never invent "economic uncertainty" to fill space.
+- **Tag every external cause** [confirmed] / [likely] / [hypothesis].
+
+---
+
 ## 5. How to write the insight (the part that makes it good)
 
 Write it to be **skimmed in 15 seconds.** Plain English, short lines, bullets —
@@ -243,7 +318,35 @@ alone**, then drop into the bullets only if they want the detail.
 
 ---
 
-## 7. Extensions (not built yet)
+## 7. Client memory — continuity across reports
+
+Each client has a memory file: `measurement-platform/insights/clients/<slug>.md`
+(built from `_TEMPLATE.md`). **Read it before writing; append after.** This is how
+reports build on each other instead of restarting every time — so you can say "the
+checkout drop we flagged last month recovered" instead of re-finding it.
+
+**Before** — read the file for:
+- **Standing context** — the business, the KPIs they fixate on (especially which
+  *conversion* metrics), seasonality, past events, reporting quirks, sensitivities.
+- **Focus threads** — what we said we'd watch, and why. Check what happened to each
+  (did the CPM creep continue? did the creative refresh work?).
+
+**During** — use it for continuity: reference open threads, confirm or revise past
+causes ("we guessed fatigue last month; the refresh lifted CTR back to 1.8%, so
+that was right"), and respect sensitivities (if they care most about new-customer
+ROAS, lead with it).
+
+**After** — append a dated log entry: what you focused on, the story you told, the
+causes you cited (internal + external, with confidence), follow-ups for next time.
+Move closed threads to [RESOLVED].
+
+Mitchell owns the **standing context** (the durable business facts). The **threads
++ log accrue automatically** as reports run. No file yet for a client? Create one
+from `_TEMPLATE.md`.
+
+---
+
+## 8. Extensions (not built yet)
 
 - Materialize a `vw_metrics_comparison` view for speed/consistency.
 - Auto-post: wrap this in a Prefect flow that runs after the weekly sync and posts per-client to Slack (deferred by choice — on-demand for now).

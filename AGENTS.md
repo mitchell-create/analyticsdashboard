@@ -50,7 +50,8 @@ Status:
 | `measurement-platform/services/slack-bot/` | Node.js + TypeScript Slack bot |
 | `measurement-platform/services/model-runner/` | Python + R GeoLift / CausalImpact runner (paused — see project memory) |
 | `measurement-platform/orchestration/prefect/` | Prefect 3 flows + deployments |
-| `measurement-platform/INSIGHTS_PLAYBOOK.md` | **Performance-diagnosis skill** — read this when asked to "analyze <client>"; it has the comparison SQL + the signal→cause ruleset for week-over-week / 30-day insights |
+| `measurement-platform/INSIGHTS_PLAYBOOK.md` | **Performance-diagnosis skill** — read this when asked to "analyze <client>"; comparison SQL + signal→cause ruleset + root-cause drill-down + "is it us or the market?" external check, for week-over-week / 30-day insights |
+| `measurement-platform/insights/clients/` | **Per-client report memory** — standing context + focus threads + dated report log. Read a client's `<slug>.md` before writing their report, append after (playbook §7) |
 | `measurement-platform/orchestration/chubble_report.py` | Bi-monthly Chubble Gum performance report → Slack |
 | `measurement-platform/orchestration/klaviyo_sync.py` | Direct Klaviyo API → Postgres sync |
 | `measurement-platform/warehouse/schema/` | Postgres DDL |
