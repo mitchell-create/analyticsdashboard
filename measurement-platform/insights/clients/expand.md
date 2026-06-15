@@ -18,6 +18,7 @@
 - [OPEN] **Meta CPM (30-day)** — up ~23% with flat CTR; watching whether it's auction/seasonal pressure (market) vs a relevance slip (us). Run the §4.2 portfolio check: is CPM up across all clients? Since 2026-06-14.
 - [OPEN] **Google attribution gap** — Google claims ~14x, GA4 says ~3.6x. Budget on the GA4 figure; watch whether the gap widens. Since 2026-06-14.
 - [OPEN] **Site revenue + email attribution** — a w/w read showed a big drop (revenue −39%, email →~$0) that looked like incomplete recent data. Confirm on settled data before treating as real. Since 2026-06-14.
+- [OPEN] **Creative: carousels win, DIRECT-gendered videos leak** — Carousel "Dynamic" sale ads carry ROAS with healthy 3–6% ATC; the EXF09 "Pratico/Junior Giant DIRECT FEMALE/Male" videos pull high CTR (6–8%) but ATC craters to 0.3–0.4% (clicks don't convert — hook vs offer/LP mismatch). Pause sub-1x video ads; investigate the landing experience for the DIRECT video traffic. Since 2026-06-15.
 
 ## Report log (newest first)
 
