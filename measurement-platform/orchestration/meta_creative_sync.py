@@ -66,8 +66,10 @@ INSIGHT_FIELDS_CORE = [
     "cpc", "cpm",
     "actions", "action_values",
 ]
+# Note: 3-second views ("hook") are NOT a top-level field in current API versions —
+# they come from actions[action_type='video_view'] (pulled below). These remaining
+# video fields are stable; if one is still rejected, the fallback drops them all.
 VIDEO_FIELDS = [
-    "video_3_sec_watched_actions",
     "video_thruplay_watched_actions",
     "video_p100_watched_actions",
     "video_avg_time_watched_actions",
@@ -232,6 +234,17 @@ def _first_av(arr):
         return None
 
 
+def _action_value(arr, action_type):
+    """Sum the value of one action_type from an actions array (e.g. video_view = 3-sec views)."""
+    if not arr:
+        return None
+    try:
+        return int(sum(float(a.get("value", 0) or 0)
+                       for a in arr if a.get("action_type") == action_type))
+    except (TypeError, ValueError):
+        return None
+
+
 def _num(v):
     return float(v) if v not in (None, "") else None
 
@@ -271,7 +284,7 @@ def _coerce(row):
         "inline_link_click_ctr": _num(row.get("inline_link_click_ctr")),
         "cpc": _num(row.get("cpc")),
         "cpm": _num(row.get("cpm")),
-        "video_3s_views": _sum_av(row.get("video_3_sec_watched_actions")),
+        "video_3s_views": _action_value(row.get("actions"), "video_view"),  # 3-sec views
         "video_thruplays": _sum_av(row.get("video_thruplay_watched_actions")),
         "video_p100_views": _sum_av(row.get("video_p100_watched_actions")),
         "video_avg_seconds": _first_av(row.get("video_avg_time_watched_actions")),
