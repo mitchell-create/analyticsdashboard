@@ -226,6 +226,14 @@ End every chain at one of two things:
 State confidence honestly: "frequency is 3.4 and these creatives have run 6 weeks,
 so fatigue is **likely**" — not just "fatigue."
 
+**Deeper platform diagnostics** live in [`insights/references/`](insights/references/):
+Google (quality-score components, impression-share **budget-vs-rank**, smart bidding)
+and Meta (the **breakdown effect**, auction overlap, learning phase, relevance
+diagnostics). Reach for these when a move needs platform-specific reasoning — e.g.
+"is lost impression share budget or rank?" (more budget won't fix a rank problem),
+"is this just the learning phase?", or "did budget really go to the worse segment,
+or is that the breakdown effect?"
+
 ---
 
 ## 4.2 Is it you or the market? (external context)
