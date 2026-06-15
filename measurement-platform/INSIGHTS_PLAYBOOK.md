@@ -266,8 +266,8 @@ CVR down with no site change). If an internal cause fully explains it, skip this
 
 Account-level metrics tell you *that* Meta moved; **ad-level** tells you *which
 creative* moved it. Data: `raw.meta_ad_insights_daily` (per ad, per day, from
-`meta_creative_sync.py`) → parsed into angle / hook / format by
-`stg_meta_ad_creative` (the naming-convention parser) → `fact_creative_daily`.
+`meta_creative_sync.py`) → tagged with `creative_type` + `creative_key` by
+`stg_meta_ad_creative` → `fact_creative_daily`.
 
 **A creative is a funnel.** Each metric isolates one stage, so the panel *is* the
 diagnosis — find the stage where it leaks:
@@ -294,68 +294,93 @@ same `jsonb_array_elements` pattern as the omni_purchase query in §3.)
 - High CTR, low ATC/ROAS → the click is unqualified or the landing page doesn't match the ad's promise.
 - Good everything, but ROAS sliding while frequency climbs → **fatigue**: it worked, now it's over-shown. Refresh it.
 
-**Roll the funnel up by dimension** (once names are parsed):
-- **By format** (image / video / carousel / UGC) — which format this audience responds to.
-- **By angle** (the message) — which *positioning* converts (ROAS), vs which just farms cheap clicks (high CTR, low ROAS).
-- **By hook** (the opening) — hook rate isolates it; find the openings that stop the scroll, then pair the best hook with the best-converting angle.
+**Group by the creative, then rank — don't decode the name's meaning.** Names are
+too inconsistent across clients to reliably extract "angle" or "hook." So:
+- **By `creative_key`** — the ad name with "Copy / Copy 2" variants collapsed into
+  one row. Rank these by the panel: the top rows are your best creatives. You don't
+  need to know *what* the creative is — just that it wins, and where it's weak.
+- **By `creative_type`** (video / image / carousel) — the one clean cut that always
+  works; which format the audience responds to.
+- For each winner, the panel names the fix: strong everywhere but weak hold rate →
+  recut the middle to hold attention. (If a client adopts the 11-field convention,
+  `angle` / `persona` / `hook` light up and you can additionally group by those.)
 
 **Rules that keep it honest:**
 - **Minimum spend before you crown a winner.** Don't rank a creative on $30 / 2 purchases — set a floor (e.g. ≥ $200 spend or ≥ 5 purchases) and label anything below it "not enough data."
 - **Compare like with like** — settled window (§0), and same objective (a prospecting ad and a retargeting ad aren't peers).
 - **Separate "new & unproven" from "tested & losing."** A 3-day-old ad with thin data isn't a loser yet.
 
-**Queries** (from `fact_creative_daily` — counts summed, rates computed over the sums):
+**Queries** (from `fact_creative_daily` — group by the creative, rank by the panel):
 
 ```sql
--- 1) Coverage first: what % of spend has a parseable name?
---    Low coverage => fix naming before trusting any theme rollup.
-select round(100.0 * sum(spend) filter (where parse_ok) / nullif(sum(spend),0), 1) as pct_spend_parsed
-from public_marts.fact_creative_daily
-where client_slug = :client and report_date between :asof - 30 and :asof - 2;
-
--- 2) Per-creative panel, winners first, thin spend filtered
-select ad_name, format,
-  round(sum(spend),2)                                                    spend,
-  round(sum(link_clicks)::numeric     / nullif(sum(impressions),0)*100,2) link_ctr_pct,
-  round(sum(video_3s_views)::numeric  / nullif(sum(impressions),0)*100,1) hook_rate_pct,
-  round(sum(video_thruplays)::numeric / nullif(sum(impressions),0)*100,1) hold_rate_pct,
-  round(sum(add_to_cart)::numeric     / nullif(sum(link_clicks),0)*100,1) atc_rate_pct,
-  round(sum(spend)            / nullif(sum(purchases),0),2)              cpa,
-  round(sum(conversion_value) / nullif(sum(spend),0),2)                 roas
-from public_marts.fact_creative_daily
-where client_slug = :client and report_date between :asof - 30 and :asof - 2
-group by ad_name, format
-having sum(spend) >= 200          -- significance floor; tune per client
+-- 1) Which CREATIVE wins — variants grouped (creative_key), ranked by ROAS, with
+--    each one's WEAKEST funnel stage flagged (its iteration lever).
+with c as (
+  select creative_key, max(creative_type) creative_type,
+    sum(spend) spend, sum(impressions) impr, sum(link_clicks) lc,
+    sum(video_3s_views) v3s, sum(video_thruplays) thru,
+    sum(add_to_cart) atc, sum(purchases) pur, sum(conversion_value) cv
+  from public_marts.fact_creative_daily
+  where client_slug = :client and report_date between :asof - 30 and :asof - 2
+  group by creative_key
+  having sum(spend) >= 200                       -- significance floor; tune per client
+),
+r as (                                           -- rate panel per creative
+  select *,
+    lc::numeric/nullif(impr,0)   ctr,
+    v3s::numeric/nullif(impr,0)  hook,
+    thru::numeric/nullif(impr,0) hold,
+    atc::numeric/nullif(lc,0)    atc_rate,
+    cv/nullif(spend,0)           roas
+  from c
+),
+p as (                                           -- rank on each stage (hook/hold: video only)
+  select *,
+    percent_rank() over (order by ctr)                                                ctr_pr,
+    case when v3s > 0 then percent_rank() over (partition by (v3s>0) order by hook) end hook_pr,
+    case when v3s > 0 then percent_rank() over (partition by (v3s>0) order by hold) end hold_pr,
+    percent_rank() over (order by atc_rate)                                           atc_pr
+  from r
+)
+select creative_key, creative_type,
+  round(spend,2) spend, round(roas,2) roas,
+  round(ctr*100,2) ctr_pct, round(hook*100,1) hook_pct,
+  round(hold*100,1) hold_pct, round(atc_rate*100,1) atc_pct,
+  case least(ctr_pr, hook_pr, hold_pr, atc_pr)   -- lowest percentile = the lever
+    when ctr_pr  then 'link CTR (offer / CTA)'
+    when hook_pr then 'hook (opening)'
+    when hold_pr then 'hold (retention)'
+    when atc_pr  then 'ATC (click quality / LP)'
+  end as weakest_stage
+from p
 order by roas desc nulls last;
 
--- 3) Theme-level: group by format / style / audience_gender / hook (work on BOTH
---    naming schemes). angle / persona / brand are convention-only — for those add
---    `and name_scheme = 'convention'`.
-select format,                    -- or: style, audience_gender, hook, is_ugc
-  round(sum(spend),2)                                                    spend,
-  round(sum(link_clicks)::numeric     / nullif(sum(impressions),0)*100,2) link_ctr_pct,
-  round(sum(video_3s_views)::numeric  / nullif(sum(impressions),0)*100,1) hook_rate_pct,
-  round(sum(add_to_cart)::numeric     / nullif(sum(link_clicks),0)*100,1) atc_rate_pct,
-  round(sum(spend)            / nullif(sum(purchases),0),2)              cpa,
-  round(sum(conversion_value) / nullif(sum(spend),0),2)                 roas
+-- 2) Which TYPE wins — the always-reliable cut (video vs image vs carousel)
+select creative_type,
+  round(sum(spend),2)                                              spend,
+  round(sum(link_clicks)::numeric/nullif(sum(impressions),0)*100,2) link_ctr_pct,
+  round(sum(add_to_cart)::numeric/nullif(sum(link_clicks),0)*100,1) atc_rate_pct,
+  round(sum(spend)/nullif(sum(purchases),0),2)                     cpa,
+  round(sum(conversion_value)/nullif(sum(spend),0),2)            roas
 from public_marts.fact_creative_daily
 where client_slug = :client and report_date between :asof - 30 and :asof - 2
-group by format
-having sum(spend) >= 200
+group by creative_type
 order by roas desc nulls last;
 ```
 
-For **fatigue**, trend `hook_rate_pct` / `link_ctr_pct` and `frequency` by week for
-each winning ad — a winner whose hook rate decays as frequency climbs is due for a
-refresh.
+(`weakest_stage` is roughest with few creatives or thin video data — read it as a
+nudge, not gospel. Hook/hold only apply to video.)
 
-> **Two naming schemes, one set of columns** (`stg_meta_ad_creative`, see `name_scheme`):
-> - **Convention** (target): `[Brand]_[Persona]_[Angle]_[Format]_[Style]_[Source]_[Hook]_[Copy]_[Offer]_[Iteration]_[Date]`, underscore-delimited → fills every dim.
-> - **Legacy** (live now): pipe-delimited `Format | … - …`; we extract `format`, `hook`, `style`, `is_ugc`, `audience_gender`, `text_style`, `iteration`, `offer` by keyword. `angle` / `persona` / `brand` are convention-only (null on legacy).
->
-> So `format` / `hook` / `style` / `audience_gender` rollups work on **both** today; `angle` / `persona` need `name_scheme = 'convention'`. Check the scheme mix first:
-> `select name_scheme, round(sum(spend),2) spend, count(distinct ad_id) ads from public_marts.fact_creative_daily where client_slug = :client and report_date between :asof - 30 and :asof - 2 group by 1;`
-> `format` is canonicalized best-effort; `format_raw` keeps the original token.
+For **fatigue**, trend a winning creative's hook / link-CTR rate and `frequency` by
+week — one whose hook rate decays as frequency climbs is due for a refresh.
+
+> **How names are read** (`stg_meta_ad_creative`): we don't decode meaning. Every ad
+> gets a `creative_type` (video/image/carousel, by keyword) and a `creative_key`
+> (the name with "Copy / Copy N" variants stripped, so a creative's variants group
+> into one row). That ranks creatives + finds each one's weak stage on ANY client's
+> naming style. If a client adopts the 11-field convention (`name_scheme =
+> 'convention'`), the positional dims — `angle`, `persona`, `hook`, `offer` —
+> populate too, and you can additionally group by those.
 
 ---
 

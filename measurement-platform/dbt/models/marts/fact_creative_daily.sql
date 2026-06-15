@@ -1,9 +1,11 @@
--- fact_creative_daily — Daily Meta creative performance by client + parsed creative
--- dimensions. From stg_meta_ad_creative joined to the client_ad_accounts seed.
+-- fact_creative_daily — Daily Meta creative performance by client.
+-- From stg_meta_ad_creative joined to the client_ad_accounts seed. Counts at the
+-- ad/day grain; rates (CTR, hook/hold, ATC, CPA, ROAS) are computed over SUMMED
+-- counts downstream (ratio of sums, not avg of ratios). See INSIGHTS_PLAYBOOK §4.3.
 --
--- Counts are stored at the ad/day grain; compute rates (link CTR, hook/hold, ATC,
--- CPA, ROAS) over SUMMED counts at query time (ratio of sums, not avg of ratios).
--- See INSIGHTS_PLAYBOOK.md §4.3.
+-- Core analysis groups by creative_key (a creative + its variants) and
+-- creative_type (video/image/carousel). The convention dims (angle/persona/...)
+-- are carried but only populated when name_scheme = 'convention'.
 
 {{ config(materialized='table', schema='marts') }}
 
@@ -26,12 +28,13 @@ select
   c.campaign_name,
   c.name_scheme,
   c.parse_ok,
-  -- parsed creative dimensions (unified across both naming schemes)
+  -- the two that drive the analysis
+  c.creative_type,
+  c.creative_key,
+  -- convention-only dims (dormant unless the 11-field convention is used)
   c.brand,
   c.persona,
   c.angle,
-  c.format,
-  c.format_raw,
   c.style,
   c.source_tag,
   c.hook,
@@ -39,11 +42,6 @@ select
   c.offer,
   c.iteration,
   c.name_date,
-  -- legacy keyword flags (populated even when a unified dim is null)
-  c.is_ugc,
-  c.audience_gender,
-  c.text_style,
-  c.has_hook_marker,
   -- metric counts
   c.spend,
   c.impressions,
