@@ -346,11 +346,12 @@ select creative_key, creative_type,
   round(spend,2) spend, round(roas,2) roas,
   round(ctr*100,2) ctr_pct, round(hook*100,1) hook_pct,
   round(hold*100,1) hold_pct, round(atc_rate*100,1) atc_pct,
-  case least(ctr_pr, hook_pr, hold_pr, atc_pr)   -- lowest percentile = the lever
-    when ctr_pr  then 'link CTR (offer / CTA)'
-    when hook_pr then 'hook (opening)'
-    when hold_pr then 'hold (retention)'
-    when atc_pr  then 'ATC (click quality / LP)'
+  case                                            -- only flag a GENUINE weak spot (bottom third vs peers)
+    when least(ctr_pr, hook_pr, hold_pr, atc_pr) >= 0.34   then 'balanced — no weak stage'
+    when least(ctr_pr, hook_pr, hold_pr, atc_pr) = ctr_pr  then 'link CTR (offer / CTA)'
+    when least(ctr_pr, hook_pr, hold_pr, atc_pr) = hook_pr then 'hook (opening)'
+    when least(ctr_pr, hook_pr, hold_pr, atc_pr) = hold_pr then 'hold (retention)'
+    when least(ctr_pr, hook_pr, hold_pr, atc_pr) = atc_pr  then 'ATC (click quality / LP)'
   end as weakest_stage
 from p
 order by roas desc nulls last;
@@ -368,8 +369,9 @@ group by creative_type
 order by roas desc nulls last;
 ```
 
-(`weakest_stage` is roughest with few creatives or thin video data — read it as a
-nudge, not gospel. Hook/hold only apply to video.)
+(`weakest_stage` only fires when a creative is genuinely weak on a stage — bottom
+third vs peers — else "balanced". It's a nudge, not gospel: roughest with few
+creatives; hook/hold apply to video only. Tune the 0.34 threshold per taste.)
 
 For **fatigue**, trend a winning creative's hook / link-CTR rate and `frequency` by
 week — one whose hook rate decays as frequency climbs is due for a refresh.
