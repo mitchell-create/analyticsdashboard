@@ -328,17 +328,19 @@ group by ad_name, format
 having sum(spend) >= 200          -- significance floor; tune per client
 order by roas desc nulls last;
 
--- 3) Theme-level: swap `angle` for hook / format / persona / offer
-select angle,
+-- 3) Theme-level: group by format / style / audience_gender / hook (work on BOTH
+--    naming schemes). angle / persona / brand are convention-only — for those add
+--    `and name_scheme = 'convention'`.
+select format,                    -- or: style, audience_gender, hook, is_ugc
   round(sum(spend),2)                                                    spend,
   round(sum(link_clicks)::numeric     / nullif(sum(impressions),0)*100,2) link_ctr_pct,
   round(sum(video_3s_views)::numeric  / nullif(sum(impressions),0)*100,1) hook_rate_pct,
+  round(sum(add_to_cart)::numeric     / nullif(sum(link_clicks),0)*100,1) atc_rate_pct,
   round(sum(spend)            / nullif(sum(purchases),0),2)              cpa,
   round(sum(conversion_value) / nullif(sum(spend),0),2)                 roas
 from public_marts.fact_creative_daily
 where client_slug = :client and report_date between :asof - 30 and :asof - 2
-  and parse_ok                    -- theme rollups only over conforming names
-group by angle
+group by format
 having sum(spend) >= 200
 order by roas desc nulls last;
 ```
@@ -347,12 +349,13 @@ For **fatigue**, trend `hook_rate_pct` / `link_ctr_pct` and `frequency` by week 
 each winning ad — a winner whose hook rate decays as frequency climbs is due for a
 refresh.
 
-> **Naming convention** (parsed by `stg_meta_ad_creative`):
-> `[Brand]_[Persona]_[Angle]_[Format]_[Style]_[Source]_[Hook]_[Copy]_[Offer]_[Iteration]_[Date]`,
-> underscore-delimited. Names that don't split into 11 fields are kept (spend still
-> counts) but `parse_ok = false` — always check coverage (query 1) before trusting a
-> theme rollup. `format` is canonicalized best-effort (video/image/carousel/ugc);
-> `format_raw` keeps the original token.
+> **Two naming schemes, one set of columns** (`stg_meta_ad_creative`, see `name_scheme`):
+> - **Convention** (target): `[Brand]_[Persona]_[Angle]_[Format]_[Style]_[Source]_[Hook]_[Copy]_[Offer]_[Iteration]_[Date]`, underscore-delimited → fills every dim.
+> - **Legacy** (live now): pipe-delimited `Format | … - …`; we extract `format`, `hook`, `style`, `is_ugc`, `audience_gender`, `text_style`, `iteration`, `offer` by keyword. `angle` / `persona` / `brand` are convention-only (null on legacy).
+>
+> So `format` / `hook` / `style` / `audience_gender` rollups work on **both** today; `angle` / `persona` need `name_scheme = 'convention'`. Check the scheme mix first:
+> `select name_scheme, round(sum(spend),2) spend, count(distinct ad_id) ads from public_marts.fact_creative_daily where client_slug = :client and report_date between :asof - 30 and :asof - 2 group by 1;`
+> `format` is canonicalized best-effort; `format_raw` keeps the original token.
 
 ---
 

@@ -24,8 +24,9 @@ select
   c.ad_name,
   c.adset_name,
   c.campaign_name,
+  c.name_scheme,
   c.parse_ok,
-  -- parsed creative dimensions
+  -- parsed creative dimensions (unified across both naming schemes)
   c.brand,
   c.persona,
   c.angle,
@@ -38,6 +39,11 @@ select
   c.offer,
   c.iteration,
   c.name_date,
+  -- legacy keyword flags (populated even when a unified dim is null)
+  c.is_ugc,
+  c.audience_gender,
+  c.text_style,
+  c.has_hook_marker,
   -- metric counts
   c.spend,
   c.impressions,
