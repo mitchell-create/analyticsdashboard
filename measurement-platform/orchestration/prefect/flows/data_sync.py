@@ -122,6 +122,13 @@ def sync_meta() -> tuple[bool, str]:
 
 
 @task
+def sync_meta_creative() -> tuple[bool, str]:
+    """Ad-level (creative) Meta insights — feeds creative analysis (playbook §4.3)."""
+    start_date = (date.today() - timedelta(days=REPORTING_LOOKBACK_DAYS)).isoformat()
+    return _run_script("meta_creative_sync.py", ["--start-date", start_date])
+
+
+@task
 def sync_klaviyo() -> tuple[bool, str]:
     start_date = (date.today() - timedelta(days=REPORTING_LOOKBACK_DAYS)).isoformat()
     return _run_script("klaviyo_sync.py", ["--start-date", start_date])
@@ -183,6 +190,7 @@ def data_sync() -> None:
 
     results: dict[str, tuple[bool, str]] = {}
     results["meta"] = sync_meta.submit().result()
+    results["meta_creative"] = sync_meta_creative.submit().result()
     results["google"] = sync_google.submit().result()
     results["klaviyo"] = sync_klaviyo.submit().result()
     results["ga4"] = sync_ga4.submit().result()

@@ -262,6 +262,92 @@ CVR down with no site change). If an internal cause fully explains it, skip this
 
 ---
 
+## 4.3 Creative analysis (Meta ad-level): what's working, and why
+
+Account-level metrics tell you *that* Meta moved; **ad-level** tells you *which
+creative* moved it. Data: `raw.meta_ad_insights_daily` (per ad, per day, from
+`meta_creative_sync.py`) → parsed into angle / hook / format by
+`stg_meta_ad_creative` (the naming-convention parser) → `fact_creative_daily`.
+
+**A creative is a funnel.** Each metric isolates one stage, so the panel *is* the
+diagnosis — find the stage where it leaks:
+
+| Stage | Metric | Formula | A weak number here means |
+|---|---|---|---|
+| Stop the scroll | **Hook rate** | 3-sec views ÷ impressions | weak opening (first frame / first line) |
+| Keep watching | **Hold rate** | ThruPlay ÷ impressions | the body loses them after the hook |
+| Create interest | **Link CTR** | link clicks ÷ impressions | angle / offer / CTA isn't compelling |
+| Cost of reach | **CPM** | spend ÷ impressions × 1000 | relevance down, or auction up (→ §4.2) |
+| Cost of a click | **Link CPC** | spend ÷ link clicks | (falls out of CTR + CPM) |
+| Wearing out | **Frequency** | impressions ÷ reach | rising + CTR falling = fatigue |
+| Intent | **ATC rate** | add-to-cart ÷ link clicks | clicks aren't qualified / LP mismatch |
+| Resonance | **Engagement rate** | post_engagement ÷ impressions | creative isn't landing |
+| Efficiency | **CPA** | spend ÷ purchases | — |
+| Return | **ROAS** | purchase value ÷ spend | the bottom line |
+
+(ATC / purchases / engagement come out of the `actions` + `action_values` jsonb —
+same `jsonb_array_elements` pattern as the omni_purchase query in §3.)
+
+**Read the combination, not one number** — that's where the "why" is:
+- High hook, low hold → the opening over-promises; the body/payoff is weak.
+- High hook + hold, low CTR → great video, weak ask — fix the CTA/offer, not the hook.
+- High CTR, low ATC/ROAS → the click is unqualified or the landing page doesn't match the ad's promise.
+- Good everything, but ROAS sliding while frequency climbs → **fatigue**: it worked, now it's over-shown. Refresh it.
+
+**Roll the funnel up by dimension** (once names are parsed):
+- **By format** (image / video / carousel / UGC) — which format this audience responds to.
+- **By angle** (the message) — which *positioning* converts (ROAS), vs which just farms cheap clicks (high CTR, low ROAS).
+- **By hook** (the opening) — hook rate isolates it; find the openings that stop the scroll, then pair the best hook with the best-converting angle.
+
+**Rules that keep it honest:**
+- **Minimum spend before you crown a winner.** Don't rank a creative on $30 / 2 purchases — set a floor (e.g. ≥ $200 spend or ≥ 5 purchases) and label anything below it "not enough data."
+- **Compare like with like** — settled window (§0), and same objective (a prospecting ad and a retargeting ad aren't peers).
+- **Separate "new & unproven" from "tested & losing."** A 3-day-old ad with thin data isn't a loser yet.
+
+**Starter query** — creative panel per ad over a settled window, winners first, thin-spend filtered:
+
+```sql
+with ad as (
+  select ad_id, max(ad_name) ad_name,
+    sum(spend) spend, sum(impressions) impr, sum(inline_link_clicks) link_clicks,
+    sum(video_3s_views) v3s, sum(video_thruplays) thru,
+    sum( (select coalesce(sum((a->>'value')::numeric),0) from jsonb_array_elements(actions) a
+          where a->>'action_type' = 'omni_add_to_cart') )                    atc,
+    sum( (select coalesce(sum((a->>'value')::numeric),0) from jsonb_array_elements(actions) a
+          where a->>'action_type' = 'omni_purchase') )                       purch,
+    sum( (select coalesce(sum((v->>'value')::numeric),0) from jsonb_array_elements(action_values) v
+          where v->>'action_type' = 'omni_purchase') )                       conv_value
+  from raw.meta_ad_insights_daily d
+  join public_marts.client_ad_accounts c on d.account_id = c.account_id
+  where c.client_slug = :client and c.platform = 'meta'
+    and d.date_start between :asof - 30 and :asof - 2
+  group by ad_id
+)
+select ad_name,
+  round(spend, 2)                                          spend,
+  round(link_clicks::numeric / nullif(impr,0) * 100, 2)    link_ctr_pct,
+  round(v3s::numeric  / nullif(impr,0) * 100, 1)           hook_rate_pct,
+  round(thru::numeric / nullif(impr,0) * 100, 1)           hold_rate_pct,
+  round(atc::numeric  / nullif(link_clicks,0) * 100, 1)    atc_rate_pct,
+  round(spend / nullif(purch,0), 2)                        cpa,
+  round(conv_value / nullif(spend,0), 2)                   roas
+from ad
+where spend >= 200          -- significance floor; tune per client
+order by roas desc nulls last;
+```
+
+Swap `group by ad_id` for `group by angle` / `hook` / `format` once
+`stg_meta_ad_creative` is built (after the naming convention lands). For fatigue,
+trend `hook_rate_pct` / `link_ctr_pct` and `frequency` by week for each winning ad.
+
+> **Naming convention required.** The by-dimension rollups depend on the parser,
+> which is built from Mitchell's Meta ad naming convention (delimiter + field
+> order + which positions are angle/hook/format). Until that lands, group by
+> `ad_name` / `adset_name`. Names that don't match the convention are bucketed
+> `unparsed` so coverage is visible, never silently dropped.
+
+---
+
 ## 5. How to write the insight (the part that makes it good)
 
 Write it to be **skimmed in 15 seconds.** Plain English, short lines, bullets —
