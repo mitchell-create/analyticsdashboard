@@ -53,8 +53,10 @@ RATE_LIMIT_RPM = 25
 REQUEST_INTERVAL = 60.0 / RATE_LIMIT_RPM
 MAX_RETRIES = 4
 
-# Fields requested at level=ad, daily. Video fields drive hook/hold rates.
-INSIGHT_FIELDS = [
+# Fields requested at level=ad, daily. Video field names vary across Graph API
+# versions — if Meta rejects one, we fall back to the core set (hook/hold land
+# null) rather than failing the whole sync.
+INSIGHT_FIELDS_CORE = [
     "account_id",
     "campaign_id", "campaign_name",
     "adset_id", "adset_name",
@@ -63,11 +65,14 @@ INSIGHT_FIELDS = [
     "clicks", "inline_link_clicks", "ctr", "inline_link_click_ctr",
     "cpc", "cpm",
     "actions", "action_values",
+]
+VIDEO_FIELDS = [
     "video_3_sec_watched_actions",
     "video_thruplay_watched_actions",
     "video_p100_watched_actions",
     "video_avg_time_watched_actions",
 ]
+INSIGHT_FIELDS = INSIGHT_FIELDS_CORE + VIDEO_FIELDS
 
 
 def load_env():
@@ -150,24 +155,50 @@ def _date_chunks(start_date, end_date, days=CHUNK_DAYS):
         cur = chunk_end + timedelta(days=1)
 
 
-def fetch_ad_insights(account_id, token, start_date, end_date):
-    """Per-ad daily insights for one account, fetched in weekly chunks + paged."""
+def _is_field_error(exc):
+    msg = str(exc).lower()
+    return ("nonexisting field" in msg or "(#100)" in msg
+            or "unsupported get request" in msg)
+
+
+def _fetch_chunk(account_id, token, c_start, c_end, fields):
+    url = f"{GRAPH_BASE_URL}/act_{account_id}/insights"
+    params = {
+        "level": "ad",
+        "time_increment": 1,
+        "fields": ",".join(fields),
+        "time_range": json.dumps({"since": c_start, "until": c_end}),
+        "limit": 500,
+        "access_token": token,
+    }
     rows = []
-    for c_start, c_end in _date_chunks(start_date, end_date):
-        url = f"{GRAPH_BASE_URL}/act_{account_id}/insights"
-        params = {
-            "level": "ad",
-            "time_increment": 1,
-            "fields": ",".join(INSIGHT_FIELDS),
-            "time_range": json.dumps({"since": c_start, "until": c_end}),
-            "limit": 500,
-            "access_token": token,
-        }
-        data = _api_get(url, params)
+    data = _api_get(url, params)
+    rows.extend(data.get("data", []))
+    while data.get("paging", {}).get("next"):
+        data = _api_get(data["paging"]["next"], {})
         rows.extend(data.get("data", []))
-        while data.get("paging", {}).get("next"):
-            data = _api_get(data["paging"]["next"], {})
-            rows.extend(data.get("data", []))
+    return rows
+
+
+def fetch_ad_insights(account_id, token, start_date, end_date):
+    """Per-ad daily insights for one account, fetched in weekly chunks + paged.
+
+    If Meta rejects a video field (names vary by API version), drop the video
+    fields and continue with the core set so the sync still lands.
+    """
+    rows = []
+    fields = INSIGHT_FIELDS
+    for c_start, c_end in _date_chunks(start_date, end_date):
+        try:
+            rows.extend(_fetch_chunk(account_id, token, c_start, c_end, fields))
+        except RuntimeError as e:
+            if fields is INSIGHT_FIELDS and _is_field_error(e):
+                print("    WARNING: video field rejected; retrying without video "
+                      "metrics (hook/hold rates will be null)")
+                fields = INSIGHT_FIELDS_CORE
+                rows.extend(_fetch_chunk(account_id, token, c_start, c_end, fields))
+            else:
+                raise
     return rows
 
 
