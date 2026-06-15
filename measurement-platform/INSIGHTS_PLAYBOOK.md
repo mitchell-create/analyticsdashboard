@@ -7,8 +7,9 @@
 > the same logic will back the automated weekly post when that's enabled.
 
 The goal is the difference between **"Meta spend was up 18%"** (useless) and
-**"Meta CTR fell 24% w/w while frequency climbed to 3.4 — classic creative
-fatigue; refresh the top-spending ad sets before scaling further"** (actionable).
+**"Meta's ads are wearing out — people have seen them too many times, so clicks
+dropped 24%. Refresh the top 2 ad sets before spending more."** (actionable, and
+a human can skim it).
 
 ---
 
@@ -188,15 +189,48 @@ Apply after computing % changes. Thresholds are defaults — tune per client.
 
 ## 5. How to write the insight (the part that makes it good)
 
-1. **Lead with the verdict, per channel.** One sentence: what happened and what it means. ("Meta is fatiguing; Google is stable but pricier.")
-2. **Quantify with the specific delta.** "CTR 1.9% → 1.4% (-24% w/w)" beats "CTR dropped."
-3. **Name the likely cause** from the ruleset — and your confidence. Don't assert; reason. ("Frequency rose to 3.4, so this reads as fatigue rather than audience change.")
-4. **One concrete next action** per finding. Prioritized — the biggest $ impact first.
-5. **Note what you can't see.** If Google ROAS is unavailable or GA4 revenue is the proxy, say so. Don't imply precision you don't have.
-6. **Length:** 3–6 bullets per client. Skip channels that were boringly stable (just note "stable").
+Write it to be **skimmed in 15 seconds.** Plain English, short lines, bullets —
+not dense paragraphs. A reader should get the whole story from the **bold headers
+alone**, then drop into the bullets only if they want the detail.
 
-**Bad:** "Spend was $4,200, up 18%. Impressions 1.2M. Clicks 9,400. CTR 0.78%."
-**Good:** ":red_circle: *Meta — creative fatigue.* CTR 1.9%→1.4% (-24% w/w) while frequency hit 3.4 and CPM held flat — the audience is over-served, not more expensive. Spend rose 18% into declining efficiency (ROAS 3.1→2.4). *Refresh creative on the top-2 ad sets before adding budget.*"
+**Format — one short block per channel, biggest-$ channel first:**
+
+> **`<emoji>` `<Channel>` — `<plain-English verdict, 4–7 words>`**
+> - **What changed:** the key number + its delta. `CTR 1.9% → 1.4% (down 24%)`.
+> - **Why:** the cause in everyday words (see the translations below).
+> - **Do:** one concrete next step.
+
+**Rules:**
+1. **Put the verdict in the header.** Someone reading only the bold lines should
+   still get it: *"Meta — steady but getting pricier"*, *"Site — fewer sales,
+   worth a look."*
+2. **Translate the jargon — keep the number, gloss the meaning:**
+   - *creative fatigue* → "people have seen these ads too many times"
+   - *CPM up / auction pressure* → "it costs more to reach the same people"
+   - *frequency 3.4* → "each person's seen the ad ~3 times"
+   - *past the efficient frontier* → "spending past the point where it pays back"
+   - *MER* → "total sales ÷ total ad spend"
+   - *ROAS* → "sales per $1 of ad spend"
+   - *conversion rate* → "share of visitors who buy"
+3. **One number per bullet, not five.** `CPM up 23%` beats dumping
+   spend+impressions+clicks+CTR+CPC in a row.
+4. **Short sentences.** If a bullet runs past ~2 lines, split it.
+5. **Flag confidence + what you can't see.** "GA4 revenue is a proxy, not Shopify";
+   "this may be incomplete recent data — verify before acting."
+6. **Skip the boring.** A stable channel gets one line: *"Google — stable, nothing
+   to do."* Don't pad.
+7. **Length:** 2–4 bullets per channel; a whole-client read fits on a phone screen.
+
+**Bad (dense, jargony, can't skim):**
+> "Meta spend was $4,200, up 18%, with CTR at 0.78% and frequency at 3.4 against a
+> CPM that held flat, indicating creative fatigue as efficiency declined to a 2.4
+> ROAS from 3.1."
+
+**Good (skimmable, plain, bulleted):**
+> **:red_circle: Meta — ads are wearing out**
+> - **What changed:** clicks-per-view down 24% (1.9% → 1.4%); sales per ad-$ down to 2.4 from 3.1.
+> - **Why:** each person has now seen these ads ~3.4 times — they're tuning them out, *not* costing more to reach (cost-per-1,000-views held flat).
+> - **Do:** refresh the creative on your 2 top-spending ad sets before adding budget.
 
 ---
 
