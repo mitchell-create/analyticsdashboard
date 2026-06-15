@@ -30,7 +30,16 @@ select
   c.parse_ok,
   -- the two that drive the analysis
   c.creative_type,
-  c.creative_key,
+  -- creative_key groups a creative's variants into one row. Default (from stg) =
+  -- collapse "Copy / Copy N" duplicates. Per-client name-level rules go here:
+  -- Expand pools everything from the "HOOK" marker on (text style, copy, and hook
+  -- variants of the same product/audience concept) into one creative.
+  case a.client_slug
+    when 'expand' then btrim(regexp_replace(
+      regexp_replace(c.ad_name, '(\s*[-|]\s*[^-|]*hook.*$)|(\s*[-|]\s*copy(\s+\d+)?\s*$)', '', 'i'),
+      '\s+', ' ', 'g'))
+    else c.creative_key
+  end as creative_key,
   -- convention-only dims (dormant unless the 11-field convention is used)
   c.brand,
   c.persona,

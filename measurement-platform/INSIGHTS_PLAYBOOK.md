@@ -378,9 +378,10 @@ week — one whose hook rate decays as frequency climbs is due for a refresh.
 
 > **How names are read** (`stg_meta_ad_creative`): we don't decode meaning. Every ad
 > gets a `creative_type` (video/image/carousel, by keyword) and a `creative_key`
-> (the name with "Copy / Copy N" variants stripped, so a creative's variants group
-> into one row). That ranks creatives + finds each one's weak stage on ANY client's
-> naming style. If a client adopts the 11-field convention (`name_scheme =
+> (variants grouped into one row). Default grouping collapses "Copy / Copy N"
+> duplicates; per-client name-level rules live in `fact_creative_daily` (e.g. Expand
+> pools everything from its "HOOK" marker on, so a product/audience concept is one
+> row). That ranks creatives + finds each one's weak stage on ANY client's naming. If a client adopts the 11-field convention (`name_scheme =
 > 'convention'`), the positional dims — `angle`, `persona`, `hook`, `offer` —
 > populate too, and you can additionally group by those.
 
