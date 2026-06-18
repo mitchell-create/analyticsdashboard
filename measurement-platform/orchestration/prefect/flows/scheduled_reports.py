@@ -286,6 +286,14 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
             f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
         )
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
+        if gmv_spend > 0:
+            # Avoid silently publishing materially wrong revenue/ROAS when
+            # GMV spend exists but the GMV revenue view is missing/misconfigured.
+            print(
+                "REST fetch aborted: GMV spend found in fact_spend_daily but "
+                "fact_tiktok_gmvmax_daily returned no rows."
+            )
+            return None
         gmv_pv = 0
 
     gmv_roas = gmv_pv / gmv_spend if gmv_spend > 0 else 0
