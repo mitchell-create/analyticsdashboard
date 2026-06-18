@@ -81,11 +81,16 @@ def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
         conn.close()
 
 
-def _rest_query(table: str, params: str = "") -> list:
-    """Query Supabase REST API (public schema only)."""
+def _rest_query(table: str, params: str = "") -> list | None:
+    """Query Supabase REST API (public schema only).
+
+    Returns:
+      - list: parsed rows (possibly empty) when the request succeeds.
+      - None: request/HTTP/JSON failure.
+    """
     key = SUPABASE_KEY
     if not key:
-        return []
+        return None
     result = subprocess.run(
         [
             "curl", "-sk", "--max-time", "15",
@@ -93,14 +98,23 @@ def _rest_query(table: str, params: str = "") -> list:
             "-H", f"apikey: {key}",
             "-H", f"Authorization: Bearer {key}",
             "-H", "Accept: application/json",
+            "-w", "\n%{http_code}",
         ],
         capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        return None
     try:
-        data = json.loads(result.stdout)
+        body, status = result.stdout.rsplit("\n", 1)
+    except ValueError:
+        return None
+    if not status.isdigit() or not (200 <= int(status) < 300):
+        return None
+    try:
+        data = json.loads(body)
         return data if isinstance(data, list) else []
     except Exception:
-        return []
+        return None
 
 
 def _fmt_currency(val) -> str:
@@ -237,6 +251,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.meta&{date_filter}"
     )
+    if meta_rows is None:
+        return None
     meta_spend = sum(float(r.get("spend", 0)) for r in meta_rows)
 
     # --- TikTok Ads (web) spend ---
@@ -244,6 +260,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.tiktok&{date_filter}"
     )
+    if tiktok_rows is None:
+        return None
     tiktok_spend = sum(float(r.get("spend", 0)) for r in tiktok_rows)
 
     # --- Shopify purchase value ---
@@ -251,6 +269,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_kpi_daily",
         f"select=revenue,orders&client_slug=eq.chubble&{date_filter}"
     )
+    if kpi_rows is None:
+        return None
     shopify_revenue = sum(float(r.get("revenue", 0)) for r in kpi_rows)
 
     web_spend_total = meta_spend + tiktok_spend
@@ -285,6 +305,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
             "fact_spend_daily",
             f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
         )
+        if gmv_rows is None:
+            return None
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
         gmv_pv = 0
 
