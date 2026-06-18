@@ -55,12 +55,17 @@ def _post_slack_message(message: str, channel: str | None = None) -> None:
 
 def _get_pg_connection():
     """Get a psycopg2 connection using SUPABASE_DB_URL."""
-    import psycopg2
-
     db_url = os.environ.get("SUPABASE_DB_URL")
     if not db_url:
         return None
-    return psycopg2.connect(db_url, connect_timeout=15)
+    try:
+        import psycopg2
+
+        return psycopg2.connect(db_url, connect_timeout=15)
+    except Exception as e:
+        # Ensure connection failures degrade to REST fallback instead of crashing the flow.
+        print(f"PostgreSQL connection failed: {e}")
+        return None
 
 
 def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
@@ -137,7 +142,12 @@ def _compute_period(report_date: date) -> tuple[date, date, str]:
 
 def _fetch_via_postgres(start_date: date, end_date: date) -> dict | None:
     """Fetch report data directly from PostgreSQL (public_marts schema)."""
-    conn = _get_pg_connection()
+    try:
+        conn = _get_pg_connection()
+    except Exception as e:
+        # Guard against any unexpected connection acquisition failures.
+        print(f"PostgreSQL connection acquisition failed: {e}")
+        return None
     if not conn:
         return None
 
