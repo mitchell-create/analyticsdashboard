@@ -23,7 +23,8 @@ Data sources (public_marts schema, populated by dbt):
 
 import json
 import os
-import subprocess
+import urllib.error
+import urllib.request
 from datetime import date, timedelta
 
 from prefect import flow, task
@@ -60,7 +61,11 @@ def _get_pg_connection():
     db_url = os.environ.get("SUPABASE_DB_URL")
     if not db_url:
         return None
-    return psycopg2.connect(db_url, connect_timeout=15)
+    try:
+        return psycopg2.connect(db_url, connect_timeout=15)
+    except Exception as e:
+        print(f"PostgreSQL connection failed: {e}")
+        return None
 
 
 def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
@@ -81,26 +86,27 @@ def _pg_query_sql(sql: str, params: tuple = ()) -> list[dict]:
         conn.close()
 
 
-def _rest_query(table: str, params: str = "") -> list:
+def _rest_query(table: str, params: str = "") -> list | None:
     """Query Supabase REST API (public schema only)."""
     key = SUPABASE_KEY
     if not key:
-        return []
-    result = subprocess.run(
-        [
-            "curl", "-sk", "--max-time", "15",
-            f"{SUPABASE_URL}/rest/v1/{table}?{params}",
-            "-H", f"apikey: {key}",
-            "-H", f"Authorization: Bearer {key}",
-            "-H", "Accept: application/json",
-        ],
-        capture_output=True, text=True,
+        return None
+    request = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/{table}?{params}",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json",
+        },
+        method="GET",
     )
     try:
-        data = json.loads(result.stdout)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+        print(f"REST query failed for {table}: {e}")
+        return None
+    return data if isinstance(data, list) else None
 
 
 def _fmt_currency(val) -> str:
@@ -237,6 +243,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.meta&{date_filter}"
     )
+    if meta_rows is None:
+        return None
     meta_spend = sum(float(r.get("spend", 0)) for r in meta_rows)
 
     # --- TikTok Ads (web) spend ---
@@ -244,6 +252,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_spend_daily",
         f"select=spend&client_slug=eq.chubble&channel=eq.tiktok&{date_filter}"
     )
+    if tiktok_rows is None:
+        return None
     tiktok_spend = sum(float(r.get("spend", 0)) for r in tiktok_rows)
 
     # --- Shopify purchase value ---
@@ -251,6 +261,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
         "fact_kpi_daily",
         f"select=revenue,orders&client_slug=eq.chubble&{date_filter}"
     )
+    if kpi_rows is None:
+        return None
     shopify_revenue = sum(float(r.get("revenue", 0)) for r in kpi_rows)
 
     web_spend_total = meta_spend + tiktok_spend
@@ -285,6 +297,8 @@ def _fetch_via_rest(start_date: date, end_date: date) -> dict | None:
             "fact_spend_daily",
             f"select=spend&client_slug=eq.chubble&channel=eq.tiktok_gmvmax&{date_filter}"
         )
+        if gmv_rows is None:
+            return None
         gmv_spend = sum(float(r.get("spend", 0)) for r in gmv_rows)
         gmv_pv = 0
 
