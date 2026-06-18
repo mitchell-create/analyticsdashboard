@@ -27,11 +27,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from create_mvp_dashboards import get_headers, login, METABASE_URL
 from fix_metabase_date_filter import get_card, list_cards, update_card_option_b
 
-# Optional variables with defaults (last 30 days for primary, prior 30 days for comparison)
-_P1 = "[[{{report_date_start}}::date --]] CURRENT_DATE - 30"
-_P2 = "[[{{report_date_end}}::date --]] CURRENT_DATE"
-_C1 = "[[{{comparison_date_start}}::date --]] CURRENT_DATE - 60"
-_C2 = "[[{{comparison_date_end}}::date --]] CURRENT_DATE - 31"
+# Optional date ranges for primary and comparison windows.
+# Use optional AND blocks so applying one variable never comments out the rest
+# of the predicate chain.
+_PRIMARY_RANGE = """1=1
+[[AND report_date >= {{report_date_start}}::date]]
+[[AND report_date <= {{report_date_end}}::date]]"""
+_COMPARISON_RANGE = """1=1
+[[AND report_date >= {{comparison_date_start}}::date]]
+[[AND report_date <= {{comparison_date_end}}::date]]"""
 
 CHANNEL_COMPARISON_QUESTIONS = [
     {
@@ -40,13 +44,13 @@ CHANNEL_COMPARISON_QUESTIONS = [
 WITH p1 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_P1} AND report_date <= {_P2}
+  WHERE {_PRIMARY_RANGE}
   GROUP BY channel
 ),
 p2 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_C1} AND report_date <= {_C2}
+  WHERE {_COMPARISON_RANGE}
   GROUP BY channel
 )
 SELECT
@@ -67,22 +71,22 @@ ORDER BY period_spend DESC NULLS LAST
         "sql": f"""
 WITH rev_p1 AS (
   SELECT COALESCE(SUM(revenue), 0) AS revenue FROM public_marts.fact_kpi_daily
-  WHERE report_date >= {_P1} AND report_date <= {_P2}
+  WHERE {_PRIMARY_RANGE}
 ),
 rev_p2 AS (
   SELECT COALESCE(SUM(revenue), 0) AS revenue FROM public_marts.fact_kpi_daily
-  WHERE report_date >= {_C1} AND report_date <= {_C2}
+  WHERE {_COMPARISON_RANGE}
 ),
 spend_p1 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_P1} AND report_date <= {_P2}
+  WHERE {_PRIMARY_RANGE}
   GROUP BY channel
 ),
 spend_p2 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_C1} AND report_date <= {_C2}
+  WHERE {_COMPARISON_RANGE}
   GROUP BY channel
 )
 SELECT
@@ -107,7 +111,7 @@ WITH p1 AS (
     COALESCE(SUM(impressions), 0) AS impressions,
     COALESCE(SUM(clicks), 0) AS clicks
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_P1} AND report_date <= {_P2}
+  WHERE {_PRIMARY_RANGE}
   GROUP BY channel
 ),
 p2 AS (
@@ -115,7 +119,7 @@ p2 AS (
     COALESCE(SUM(impressions), 0) AS impressions,
     COALESCE(SUM(clicks), 0) AS clicks
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_C1} AND report_date <= {_C2}
+  WHERE {_COMPARISON_RANGE}
   GROUP BY channel
 )
 SELECT
@@ -141,13 +145,13 @@ ORDER BY period_impressions DESC NULLS LAST
 WITH p1 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_P1} AND report_date <= {_P2}
+  WHERE {_PRIMARY_RANGE}
   GROUP BY channel
 ),
 p2 AS (
   SELECT channel, COALESCE(SUM(spend), 0) AS spend
   FROM public_marts.fact_spend_daily
-  WHERE report_date >= {_C1} AND report_date <= {_C2}
+  WHERE {_COMPARISON_RANGE}
   GROUP BY channel
 )
 SELECT

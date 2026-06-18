@@ -87,3 +87,4 @@ This updates all date-based cards to use `report_date_start` and `report_date_en
 | "Variable not found" when linking | Ensure the script ran successfully. Re-run `apply_date_range.py`. |
 | Cards show no data | Check that Start date ≤ End date and your data exists in that range. |
 | Filter doesn't apply | Verify both Start date and End date are linked to each card. |
+| Only one bound seems to apply (or range behaves oddly) | Re-run `apply_date_range.py` from this repo version. Older SQL used inline `--` defaults that could comment out the rest of a date predicate once a variable was set. |

@@ -2,6 +2,9 @@
 
 Period-over-period comparison: "Last N days vs Previous N days" with % change.
 
+> Want Shopify-style KPI cards (big value + green/red up/down percent) on your existing dashboard?
+> Use `SHOPIFY_STYLE_COMPARISON_SETUP.md` and run `add_shopify_style_kpi_cards.py`.
+
 ---
 
 ## Step 1: Run the script
