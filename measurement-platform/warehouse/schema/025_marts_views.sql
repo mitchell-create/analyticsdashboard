@@ -5,11 +5,47 @@
 -- Run this migration once via Supabase SQL Editor or psql:
 --   psql $SUPABASE_DB_URL -f 025_marts_views.sql
 
--- Drop existing empty tables so we can replace them with views.
--- (The original 020_facts.sql created empty tables in public schema;
---  dbt writes the actual data to public_marts.)
-DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;
-DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;
+-- Replace legacy public tables with views only when it is safe.
+-- IMPORTANT: refuse to drop non-empty tables to avoid irreversible data loss.
+DO $$
+DECLARE
+    has_rows boolean;
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = 'fact_spend_daily'
+          AND c.relkind = 'r'
+    ) THEN
+        SELECT EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1) INTO has_rows;
+        IF has_rows THEN
+            RAISE EXCEPTION 'Refusing to replace public.fact_spend_daily: table contains data. Migrate data before running 025_marts_views.sql.';
+        END IF;
+        DROP TABLE public.fact_spend_daily CASCADE;
+    END IF;
+END $$;
+
+DO $$
+DECLARE
+    has_rows boolean;
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = 'fact_kpi_daily'
+          AND c.relkind = 'r'
+    ) THEN
+        SELECT EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1) INTO has_rows;
+        IF has_rows THEN
+            RAISE EXCEPTION 'Refusing to replace public.fact_kpi_daily: table contains data. Migrate data before running 025_marts_views.sql.';
+        END IF;
+        DROP TABLE public.fact_kpi_daily CASCADE;
+    END IF;
+END $$;
 
 -- View: fact_spend_daily -> public_marts.fact_spend_daily
 CREATE OR REPLACE VIEW public.fact_spend_daily AS
