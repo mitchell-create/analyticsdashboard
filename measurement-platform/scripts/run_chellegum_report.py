@@ -60,9 +60,13 @@ def setup_views():
         FROM public_marts.fact_tiktok_gmv_max_daily;
     """)
 
-    cur.execute("GRANT SELECT ON public.fact_spend_daily TO anon, authenticated;")
-    cur.execute("GRANT SELECT ON public.fact_kpi_daily TO anon, authenticated;")
-    cur.execute("GRANT SELECT ON public.fact_tiktok_gmvmax_daily TO anon, authenticated;")
+    # Restrict REST-accessible views to service_role to avoid cross-client data exposure.
+    cur.execute("REVOKE ALL ON public.fact_spend_daily FROM anon, authenticated;")
+    cur.execute("REVOKE ALL ON public.fact_kpi_daily FROM anon, authenticated;")
+    cur.execute("REVOKE ALL ON public.fact_tiktok_gmvmax_daily FROM anon, authenticated;")
+    cur.execute("GRANT SELECT ON public.fact_spend_daily TO service_role;")
+    cur.execute("GRANT SELECT ON public.fact_kpi_daily TO service_role;")
+    cur.execute("GRANT SELECT ON public.fact_tiktok_gmvmax_daily TO service_role;")
 
     conn.commit()
     cur.close()

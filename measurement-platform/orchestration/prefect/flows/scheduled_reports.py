@@ -88,7 +88,8 @@ def _rest_query(table: str, params: str = "") -> list:
         return []
     result = subprocess.run(
         [
-            "curl", "-sk", "--max-time", "15",
+            # Keep TLS verification enabled because this request carries service credentials.
+            "curl", "-sS", "--max-time", "15",
             f"{SUPABASE_URL}/rest/v1/{table}?{params}",
             "-H", f"apikey: {key}",
             "-H", f"Authorization: Bearer {key}",
