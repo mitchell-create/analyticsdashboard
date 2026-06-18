@@ -88,7 +88,7 @@ def _rest_query(table: str, params: str = "") -> list:
         return []
     result = subprocess.run(
         [
-            "curl", "-sk", "--max-time", "15",
+            "curl", "-sS", "--max-time", "15",
             f"{SUPABASE_URL}/rest/v1/{table}?{params}",
             "-H", f"apikey: {key}",
             "-H", f"Authorization: Bearer {key}",
@@ -96,6 +96,9 @@ def _rest_query(table: str, params: str = "") -> list:
         ],
         capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        print(f"Supabase REST query failed: {result.stderr.strip()}")
+        return []
     try:
         data = json.loads(result.stdout)
         return data if isinstance(data, list) else []
