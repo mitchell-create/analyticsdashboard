@@ -10,7 +10,11 @@
 
 -- ─── Account mapping ────────────────────────────────────────────────────────────
 with accounts as (
-  select client_slug, platform, account_id
+  select
+    client_slug,
+    platform,
+    account_id,
+    regexp_replace(account_id, '[^0-9]', '', 'g') as normalized_account_id
   from {{ ref('client_ad_accounts') }}
 ),
 
@@ -24,7 +28,9 @@ meta as (
     s.impressions,
     s.clicks
   from {{ ref('stg_meta_spend') }} s
-  inner join accounts a on a.platform = 'meta' and a.account_id = s.account_id
+  inner join accounts a
+    on a.platform = 'meta'
+    and a.normalized_account_id = regexp_replace(s.account_id, '[^0-9]', '', 'g')
 ),
 
 google as (
@@ -36,7 +42,9 @@ google as (
     s.impressions,
     s.clicks
   from {{ ref('stg_google_spend') }} s
-  inner join accounts a on a.platform = 'google' and a.account_id = s.account_id
+  inner join accounts a
+    on a.platform = 'google'
+    and a.normalized_account_id = regexp_replace(s.account_id, '[^0-9]', '', 'g')
 ),
 
 tiktok_regular as (
@@ -48,7 +56,9 @@ tiktok_regular as (
     s.impressions,
     s.clicks
   from {{ ref('stg_tiktok_spend') }} s
-  inner join accounts a on a.platform = 'tiktok' and a.account_id = s.account_id
+  inner join accounts a
+    on a.platform = 'tiktok'
+    and a.normalized_account_id = regexp_replace(s.account_id, '[^0-9]', '', 'g')
 ),
 
 -- ─── TikTok GMV Max (Coupler.io) — separate channel for TikTok Shop campaigns ──
