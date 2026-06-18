@@ -5,11 +5,55 @@
 -- Run this migration once via Supabase SQL Editor or psql:
 --   psql $SUPABASE_DB_URL -f 025_marts_views.sql
 
--- Drop existing empty tables so we can replace them with views.
--- (The original 020_facts.sql created empty tables in public schema;
---  dbt writes the actual data to public_marts.)
-DROP TABLE IF EXISTS public.fact_spend_daily CASCADE;
-DROP TABLE IF EXISTS public.fact_kpi_daily CASCADE;
+-- Safety: only drop legacy public tables when they are empty.
+-- If any of these tables contain rows, abort to avoid data loss.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'fact_spend_daily'
+    ) THEN
+        IF EXISTS (SELECT 1 FROM public.fact_spend_daily LIMIT 1) THEN
+            RAISE EXCEPTION
+                'Refusing to drop public.fact_spend_daily because it contains data. Migrate data before running 025_marts_views.sql.';
+        END IF;
+        DROP TABLE public.fact_spend_daily CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'fact_kpi_daily'
+    ) THEN
+        IF EXISTS (SELECT 1 FROM public.fact_kpi_daily LIMIT 1) THEN
+            RAISE EXCEPTION
+                'Refusing to drop public.fact_kpi_daily because it contains data. Migrate data before running 025_marts_views.sql.';
+        END IF;
+        DROP TABLE public.fact_kpi_daily CASCADE;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'fact_tiktok_gmvmax_daily'
+    ) THEN
+        IF EXISTS (SELECT 1 FROM public.fact_tiktok_gmvmax_daily LIMIT 1) THEN
+            RAISE EXCEPTION
+                'Refusing to drop public.fact_tiktok_gmvmax_daily because it contains data. Migrate data before running 025_marts_views.sql.';
+        END IF;
+        DROP TABLE public.fact_tiktok_gmvmax_daily CASCADE;
+    END IF;
+END $$;
 
 -- View: fact_spend_daily -> public_marts.fact_spend_daily
 CREATE OR REPLACE VIEW public.fact_spend_daily AS
