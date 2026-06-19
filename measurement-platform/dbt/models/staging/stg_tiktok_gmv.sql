@@ -9,8 +9,26 @@
   )
 }}
 
+{% set tiktok_gmv_max_relation = none %}
+{% if execute %}
+  {% set tiktok_gmv_max_relation = adapter.get_relation(
+      database=target.database,
+      schema='coupler_internal',
+      identifier='tiktok_gmv_max'
+  ) %}
+{% endif %}
+
 with source as (
-  select * from {{ source('coupler_chubble', 'tiktok_gmv_max') }}
+  {% if tiktok_gmv_max_relation is not none %}
+    select * from {{ source('coupler_chubble', 'tiktok_gmv_max') }}
+  {% else %}
+    select
+      cast(null as timestamp) as stat_time_day,
+      cast(null as numeric(14, 2)) as total_purchase_value,
+      cast(null as int) as total_purchase,
+      cast(null as numeric(14, 2)) as cost
+    where 1 = 0
+  {% endif %}
 ),
 
 renamed as (
