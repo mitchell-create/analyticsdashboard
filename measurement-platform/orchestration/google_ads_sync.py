@@ -39,7 +39,9 @@ import requests
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-API_VERSION = "v20"  # v18/v19 are sunset (404); bump if a version error appears
+API_VERSION = "v24"  # latest GA version as of 2026-06. v20 sunset 2026-06-10 (v21 Aug, v22 Oct).
+# Google moved to monthly API releases in 2026 — each version lives ~1yr. On a 404 /
+# "version ... is not supported" error, bump to the newest version in the docs nav.
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 RAW_TABLE = "raw.google_account_performance_report"
 DEFAULT_LOOKBACK_DAYS = 45
