@@ -1,14 +1,14 @@
 """
-data_sync.py — Bi-monthly direct-API data sync + dbt build.
+data_sync.py — Daily direct-API data sync + dbt build.
 
-Runs the direct sync scripts (Meta, Klaviyo, GA4) against the platform APIs,
-then dbt run + test, so the warehouse is fresh before the scheduled client
-reports fire (14th / 1st). Replaces the old Airbyte-based
-start-airbyte-sync.ps1 pipeline.
+Runs the direct sync scripts (Meta, Google, Klaviyo, GA4) against the platform
+APIs, then dbt seed + run + test, so the warehouse is current every morning.
+Replaces the old Airbyte-based start-airbyte-sync.ps1 pipeline.
 
-Schedule (see prefect.yaml):
-  - 2am ET on the 13th  -> feeds the 14th "last 14 days" report
-  - 2am ET on the 1st   -> feeds the 1st "previous full month" report
+Schedule (see prefect.yaml, deployment `data-sync-daily`):
+  - 12:00 AM ET nightly. The 45-day lookback re-pulls trailing days, so
+    late-settling data (GA4's 24-48h lag, Meta's ~28-day attribution revisions)
+    is corrected on the following nights' runs.
 
 Each sync script self-loads measurement-platform/.env, and this flow also
 loads it so Slack alerting + pipeline_runs logging have their credentials
@@ -180,7 +180,7 @@ def run_dbt() -> tuple[bool, str]:
 # ─── Flow ─────────────────────────────────────────────────────────────────────
 
 @flow(name="data_sync",
-      description="Bi-monthly direct-API sync (Meta/Google/Klaviyo/GA4) + dbt build")
+      description="Daily direct-API sync (Meta/Google/Klaviyo/GA4) + dbt build")
 def data_sync() -> None:
     logger = get_run_logger()
     load_env()

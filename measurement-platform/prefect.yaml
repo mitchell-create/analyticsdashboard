@@ -60,14 +60,16 @@ deployments:
         SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
         SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
 
-  # Data sync — WEEKLY direct-API pull (Meta/Google/Klaviyo/GA4) + dbt build.
-  # Runs Sunday 11:59 PM ET so every new week opens with fresh data + marts.
+  # Data sync — DAILY direct-API pull (Meta/Google/Klaviyo/GA4) + dbt build.
+  # Runs every night at 12:00 AM ET so the warehouse is always current. The flow's
+  # 45-day lookback re-pulls trailing days, so late-settling data (GA4 24-48h lag,
+  # Meta's ~28-day attribution revisions) is corrected on subsequent nights.
   # The flow self-loads measurement-platform/.env for all credentials.
-  - name: data-sync-weekly
+  - name: data-sync-daily
     entrypoint: orchestration/prefect/flows/data_sync.py:data_sync
-    description: "Weekly direct-API sync (Meta/Google/Klaviyo/GA4) + dbt (Sun 11:59pm ET)"
+    description: "Daily direct-API sync (Meta/Google/Klaviyo/GA4) + dbt (12:00 AM ET nightly)"
     schedule:
-      cron: "59 23 * * 0"
+      cron: "0 0 * * *"
       timezone: "America/New_York"
     work_pool:
       name: default-agent-pool
