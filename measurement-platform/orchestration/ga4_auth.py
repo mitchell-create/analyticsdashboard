@@ -87,7 +87,11 @@ def main():
         }
     }
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-    creds = flow.run_local_server(port=8090, prompt="consent")
+    # open_browser=False: print the URL instead of auto-opening the OS default
+    # browser. The default browser may be signed into the wrong Google account
+    # (and on the headless dedicated PC there's no browser at all) — so we hand the
+    # URL to whoever runs this and let them open it in the right profile.
+    creds = flow.run_local_server(port=8090, prompt="consent", open_browser=False)
 
     out = {
         "token": creds.token,
