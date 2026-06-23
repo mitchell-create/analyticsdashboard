@@ -5,24 +5,10 @@ name: measurement-platform
 prefect-version: ">=3.0.0"
 
 deployments:
-  - name: daily
-    entrypoint: orchestration/prefect/flows/daily_pipeline.py:daily_pipeline
-    description: Daily dbt run + dbt test after Airbyte
-    schedule:
-      cron: "0 6 * * *"
-      timezone: "America/New_York"
-    work_pool:
-      name: default-agent-pool
-    parameters: {}
-    # Pass env vars to flow runs (dbt needs Path to find dbt CLI)
-    job_variables:
-      env:
-        SUPABASE_URL: "{{ $SUPABASE_URL }}"
-        SUPABASE_SERVICE_KEY: "{{ $SUPABASE_SERVICE_KEY }}"
-        DBT_PROJECT_DIR: "{{ $DBT_PROJECT_DIR }}"
-        Path: "{{ $Path }}"
-        SLACK_BOT_TOKEN: "{{ $SLACK_BOT_TOKEN }}"
-        SLACK_ALERT_CHANNEL_ID: "{{ $SLACK_ALERT_CHANNEL_ID }}"
+  # NOTE: the old 6am "daily" (daily_pipeline.py — dbt-after-Airbyte) deployment was
+  # removed 2026-06-23: data-sync-daily already runs dbt nightly at midnight, so it
+  # was a redundant second dbt run. Delete it on the server with:
+  #   prefect deployment delete daily_pipeline/daily
 
   # Chellegum report — 1st of every month (previous month data)
   # Posts to #chubblegum channel (C0AEXRYPA9Y)

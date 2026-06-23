@@ -449,14 +449,29 @@ def sync_all(start_date=None, end_date=None, property_filter=None, dry_run=False
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync GA4 data to Supabase")
     parser.add_argument("--property", help="Sync only this property ID")
+    parser.add_argument("--client",
+                        help="Sync only this client slug (mapped to its GA4 property via the seed)")
     parser.add_argument("--start-date", default=None, help=f"Start date (default: {DEFAULT_START_DATE})")
     parser.add_argument("--end-date", default=None, help="End date (default: today)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     args = parser.parse_args()
 
+    # Resolve --client -> GA4 property id via the seed, so this matches meta_sync /
+    # google_ads_sync (which both take --client).
+    property_filter = args.property
+    if args.client and not property_filter:
+        slug = args.client.strip().lower()
+        match = [pid for pid, cslug in load_ga4_properties().items() if cslug.lower() == slug]
+        if not match:
+            raise SystemExit(
+                f"ERROR: no GA4 property for client '{args.client}' in "
+                "client_ad_accounts.csv (platform=ga4)")
+        property_filter = match[0]
+        print(f"Resolved client '{args.client}' -> GA4 property {property_filter}")
+
     sync_all(
         start_date=args.start_date,
         end_date=args.end_date,
-        property_filter=args.property,
+        property_filter=property_filter,
         dry_run=args.dry_run,
     )
