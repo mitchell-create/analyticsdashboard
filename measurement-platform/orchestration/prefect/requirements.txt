@@ -3,3 +3,10 @@ prefect>=2.14.0
 supabase>=2.0.0
 slack-sdk>=3.23.0
 psycopg2-binary>=2.9.0
+
+# Direct-API sync scripts (meta_sync, google_ads_sync, ga4_sync, klaviyo_sync)
+requests>=2.31.0
+# GA4 Data API + the OAuth helper flow (ga4_sync.py, ga4_auth.py, google_ads_auth.py)
+google-analytics-data>=0.18.0
+google-auth>=2.28.0
+google-auth-oauthlib>=1.2.0
