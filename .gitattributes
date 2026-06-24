@@ -1,0 +1,2 @@
+# Keep patch files byte-exact so `git apply` works on any platform (no CRLF munging).
+*.patch -text
