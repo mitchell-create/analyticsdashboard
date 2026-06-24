@@ -1,0 +1,42 @@
+diff --git a/auth/scopes.py b/auth/scopes.py
+index db86f4a..fb7f0cf 100644
+--- a/auth/scopes.py
++++ b/auth/scopes.py
+@@ -23,8 +23,11 @@ BASE_SCOPES = [
+ # for Shopping; granted via the Google Cloud OAuth consent screen).
+ MERCHANT_API_SCOPE = 'https://www.googleapis.com/auth/content'
+
+-# All scopes needed for the Google Merchant MCP.
+-SCOPES = BASE_SCOPES + [MERCHANT_API_SCOPE]
++# Local stdio usage only needs the Merchant API content scope. The OAuth
++# credential provisioned for this analytics workspace is intentionally scoped
++# to content only, so asking for userinfo/openid during refresh causes
++# invalid_scope even though Merchant API calls work.
++SCOPES = [MERCHANT_API_SCOPE]
+
+
+ def get_current_scopes():
+diff --git a/merchant_server.py b/merchant_server.py
+index a674d6e..8825b28 100644
+--- a/merchant_server.py
++++ b/merchant_server.py
+@@ -1250,7 +1250,10 @@ async def render_account_issues(
+ ) -> str:
+     """Render account-level issues (human-readable titles + descriptions)."""
+     aid = normalize_account_id(account_id)
+-    body = {"languageCode": language_code, "timeZone": time_zone}
++    # Merchant API v1 rejects the older languageCode/timeZone payload fields
++    # on issue-render endpoints. Keep the parameters for MCP compatibility but
++    # send an empty body for the current v1 endpoint.
++    body = {}
+     data = _request(
+         "POST",
+         (
+@@ -1286,7 +1289,7 @@ async def render_product_issues(
+             f"/issueresolution/{ISSUERESOLUTION_API_VERSION}/accounts/{aid}"
+             f"/products/{product_name}:renderproductissues"
+         )
+-    body = {"languageCode": language_code, "timeZone": time_zone}
++    body = {}
+     data = _request("POST", path, body=body)
+     return _dump(data)
