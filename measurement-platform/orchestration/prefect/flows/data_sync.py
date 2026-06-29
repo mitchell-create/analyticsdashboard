@@ -147,6 +147,12 @@ def sync_google() -> tuple[bool, str]:
 
 
 @task
+def sync_tiktok() -> tuple[bool, str]:
+    start_date = (date.today() - timedelta(days=REPORTING_LOOKBACK_DAYS)).isoformat()
+    return _run_script("tiktok_sync.py", ["--start-date", start_date])
+
+
+@task
 def run_dbt() -> tuple[bool, str]:
     """dbt run + dbt test from the dbt project dir."""
     logger = get_run_logger()
@@ -192,6 +198,7 @@ def data_sync() -> None:
     results["meta"] = sync_meta.submit().result()
     results["meta_creative"] = sync_meta_creative.submit().result()
     results["google"] = sync_google.submit().result()
+    results["tiktok"] = sync_tiktok.submit().result()
     results["klaviyo"] = sync_klaviyo.submit().result()
     results["ga4"] = sync_ga4.submit().result()
 
